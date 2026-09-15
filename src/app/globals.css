@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  body {
+    @apply bg-cream-100 text-wood-800 antialiased;
+  }
+
+  ::selection {
+    @apply bg-forest-400/30;
+  }
+
+  :focus-visible {
+    @apply outline outline-2 outline-offset-2 outline-dusk-600;
+  }
+}

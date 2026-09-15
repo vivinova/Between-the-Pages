@@ -1,0 +1,3 @@
+-- Local/dev seed data. Safe to re-run against a fresh database.
+-- Phase 1 has no content tables to seed yet (shelves/prompts/books arrive
+-- in later phases). This file will grow with each phase.
