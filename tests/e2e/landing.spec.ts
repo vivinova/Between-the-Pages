@@ -8,8 +8,10 @@ test("home page offers sign up and sign in", async ({ page }) => {
 });
 
 test("protected routes redirect anonymous visitors to sign in", async ({ page }) => {
-  await page.goto("/today");
-  await expect(page).toHaveURL(/\/login/);
+  for (const path of ["/today", "/journal", "/journal/new"]) {
+    await page.goto(path);
+    await expect(page).toHaveURL(/\/login/);
+  }
 });
 
 test("library is browsable without an account", async ({ page }) => {

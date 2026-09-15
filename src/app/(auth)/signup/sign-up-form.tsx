@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 
 export function SignUpForm() {
   const [formError, setFormError] = useState<string | null>(null);
+  const [checkEmail, setCheckEmail] = useState(false);
   const [isPending, startTransition] = useTransition();
   const {
     register,
@@ -24,11 +25,21 @@ export function SignUpForm() {
     setFormError(null);
     startTransition(async () => {
       const result = await signUp(values);
-      if (result?.error) {
+      if (result.error) {
         setFormError(result.error);
+      } else if (result.status === "check-email") {
+        setCheckEmail(true);
       }
     });
   };
+
+  if (checkEmail) {
+    return (
+      <p className="text-sm text-wood-700">
+        Check your email for a confirmation link to finish creating your account.
+      </p>
+    );
+  }
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4" noValidate>

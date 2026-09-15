@@ -12,15 +12,18 @@ import {
 } from "@/lib/validation/auth";
 
 export type ActionResult = { error: string } | { error?: undefined };
+export type SignUpResult =
+  | { error: string; status?: undefined }
+  | { status: "check-email"; error?: undefined };
 
-export async function signUp(input: unknown): Promise<ActionResult> {
+export async function signUp(input: unknown): Promise<SignUpResult> {
   const parsed = signUpSchema.safeParse(input);
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Invalid input." };
   }
 
   const supabase = createServerSupabaseClient();
-  const { error } = await supabase.auth.signUp({
+  const { data, error } = await supabase.auth.signUp({
     email: parsed.data.email,
     password: parsed.data.password,
     options: {
@@ -31,6 +34,13 @@ export async function signUp(input: unknown): Promise<ActionResult> {
 
   if (error) {
     return { error: error.message };
+  }
+
+  // With email confirmation required (the default for a new Supabase
+  // project), signUp succeeds but returns no session until the user clicks
+  // the confirmation link, which lands on /auth/callback.
+  if (!data.session) {
+    return { status: "check-email" };
   }
 
   redirect("/today");

@@ -39,6 +39,7 @@ export interface Database {
           blocked_labels: ContentLabel[];
           notification_settings: Record<string, unknown>;
         }>;
+        Relationships: [];
       };
       journal_entries: {
         Row: {
@@ -49,7 +50,6 @@ export interface Database {
           body: string;
           created_at: string;
           updated_at: string;
-          deleted_at: string | null;
         };
         Insert: {
           id?: string;
@@ -62,8 +62,32 @@ export interface Database {
           prompt_id: string | null;
           title: string | null;
           body: string;
-          deleted_at: string | null;
         }>;
+        Relationships: [];
+      };
+      prompts: {
+        Row: {
+          id: string;
+          prompt_text: string;
+          theme: string | null;
+          active_date: string | null;
+          status: "draft" | "active" | "archived";
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          prompt_text: string;
+          theme?: string | null;
+          active_date?: string | null;
+          status?: "draft" | "active" | "archived";
+        };
+        Update: Partial<{
+          prompt_text: string;
+          theme: string | null;
+          active_date: string | null;
+          status: "draft" | "active" | "archived";
+        }>;
+        Relationships: [];
       };
       audit_log: {
         Row: {
@@ -84,7 +108,10 @@ export interface Database {
           metadata?: Record<string, unknown>;
         };
         Update: never;
+        Relationships: [];
       };
     };
+    Views: Record<string, never>;
+    Functions: Record<string, never>;
   };
 }
