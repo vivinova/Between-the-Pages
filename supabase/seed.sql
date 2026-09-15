@@ -31,3 +31,15 @@ insert into public.prompts (prompt_text, theme, status) values
   ('What does letting go actually look like for you?', 'change', 'active'),
   ('Write about someone who helped you without knowing it.', 'gratitude', 'active'),
   ('What question have you been avoiding asking yourself?', 'reflection', 'active');
+
+-- The eight launch shelves. Order matches the PRD's canonical list; admins
+-- can rename, hide, or add shelves later without a release (see Phase 6).
+insert into public.shelves (slug, name, sort_order) values
+  ('feel-behind', 'For when you feel behind', 1),
+  ('miss-someone', 'For when you miss someone', 2),
+  ('friendships-ended-quietly', 'For friendships that ended quietly', 3),
+  ('beginnings-afraid-of', 'For beginnings you are afraid of', 4),
+  ('not-forgiven-yourself', 'For things you have not forgiven yourself for', 5),
+  ('becoming-someone-new', 'For becoming someone new', 6),
+  ('lessons-learned-too-late', 'For lessons learned too late', 7),
+  ('tiny-reasons-to-keep-going', 'For tiny reasons to keep going', 8);

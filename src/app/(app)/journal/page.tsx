@@ -30,9 +30,14 @@ export default async function JournalPage({
     <div className="flex flex-col gap-6">
       <div className="flex items-baseline justify-between gap-4">
         <h1 className="font-serif text-3xl text-wood-900">Journal</h1>
-        <Link href="/journal/new">
-          <Button variant="primary">New entry</Button>
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link href="/journal/passages" className="text-sm font-medium text-dusk-700 underline">
+            Your passages in the library
+          </Link>
+          <Link href="/journal/new">
+            <Button variant="primary">New entry</Button>
+          </Link>
+        </div>
       </div>
 
       <form method="GET" action="/journal" className="flex gap-2">

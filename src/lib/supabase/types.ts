@@ -13,6 +13,14 @@ export type ContentLabel =
   | "addiction"
   | "sexual_content";
 
+export type BookModerationState =
+  | "draft"
+  | "pending_review"
+  | "published"
+  | "rejected"
+  | "removed"
+  | "archived";
+
 export interface Database {
   public: {
     Tables: {
@@ -86,6 +94,76 @@ export interface Database {
           theme: string | null;
           active_date: string | null;
           status: "draft" | "active" | "archived";
+        }>;
+        Relationships: [];
+      };
+      shelves: {
+        Row: {
+          id: string;
+          slug: string;
+          name: string;
+          description: string | null;
+          sort_order: number;
+          is_hidden: boolean;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          slug: string;
+          name: string;
+          description?: string | null;
+          sort_order?: number;
+          is_hidden?: boolean;
+        };
+        Update: Partial<{
+          slug: string;
+          name: string;
+          description: string | null;
+          sort_order: number;
+          is_hidden: boolean;
+        }>;
+        Relationships: [];
+      };
+      books: {
+        Row: {
+          id: string;
+          owner_id: string;
+          source_entry_id: string | null;
+          excerpt_text: string;
+          shelf_id: string;
+          labels: ContentLabel[];
+          allow_margin_notes: boolean;
+          notes_visible_to_readers: boolean;
+          moderation_state: BookModerationState;
+          moderation_reasons: string[];
+          created_at: string;
+          updated_at: string;
+          published_at: string | null;
+          archived_at: string | null;
+          removed_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          owner_id: string;
+          source_entry_id?: string | null;
+          excerpt_text: string;
+          shelf_id: string;
+          labels?: ContentLabel[];
+          allow_margin_notes?: boolean;
+          notes_visible_to_readers?: boolean;
+          moderation_state?: BookModerationState;
+          moderation_reasons?: string[];
+          published_at?: string | null;
+        };
+        Update: Partial<{
+          excerpt_text: string;
+          allow_margin_notes: boolean;
+          notes_visible_to_readers: boolean;
+          moderation_state: BookModerationState;
+          moderation_reasons: string[];
+          published_at: string | null;
+          archived_at: string | null;
+          removed_at: string | null;
         }>;
         Relationships: [];
       };

@@ -31,7 +31,9 @@ export function EntryEditor({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [isDeleting, startDeleteTransition] = useTransition();
+  const [selectedText, setSelectedText] = useState("");
 
+  const bodyRef = useRef<HTMLTextAreaElement | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latestRef = useRef({ id, title, body });
   latestRef.current = { id, title, body };
@@ -101,6 +103,21 @@ export function EntryEditor({
 
   const wordCount = body.trim() ? body.trim().split(/\s+/).length : 0;
 
+  const updateSelection = () => {
+    const el = bodyRef.current;
+    if (!el) return;
+    setSelectedText(el.value.slice(el.selectionStart, el.selectionEnd));
+  };
+
+  const useSelectionAsPassage = () => {
+    if (!id) return;
+    const trimmed = selectedText.trim().slice(0, 500);
+    if (!trimmed) return;
+    window.sessionStorage.setItem(`bpp:passage-draft:${id}`, trimmed);
+  };
+
+  const canUseSelection = Boolean(id) && selectedText.trim().length > 0 && selectedText.length <= 500;
+
   return (
     <div className="flex flex-col gap-6">
       {promptText ? (
@@ -125,11 +142,15 @@ export function EntryEditor({
       />
 
       <textarea
+        ref={bodyRef}
         value={body}
         onChange={(event) => {
           setBody(event.target.value);
           scheduleSave();
         }}
+        onSelect={updateSelection}
+        onMouseUp={updateSelection}
+        onKeyUp={updateSelection}
         placeholder="Write whatever is true right now."
         aria-label="Entry body"
         rows={16}
@@ -147,6 +168,19 @@ export function EntryEditor({
           {status === "error" && (errorMessage ?? "Couldn't save")}
         </span>
       </div>
+
+      {canUseSelection ? (
+        <div className="rounded-md border border-forest-400/30 bg-forest-400/10 px-4 py-3">
+          <p className="text-sm text-wood-700">
+            {selectedText.trim().length} characters selected.
+          </p>
+          <Link href={`/journal/${id}/share`} onClick={useSelectionAsPassage} className="mt-2 inline-block">
+            <Button type="button" variant="secondary">
+              Use highlighted text as your passage
+            </Button>
+          </Link>
+        </div>
+      ) : null}
 
       <p className="text-sm text-wood-600">
         Only you can see this entry. It stays private unless you choose to leave a

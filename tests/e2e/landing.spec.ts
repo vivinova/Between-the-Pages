@@ -8,7 +8,7 @@ test("home page offers sign up and sign in", async ({ page }) => {
 });
 
 test("protected routes redirect anonymous visitors to sign in", async ({ page }) => {
-  for (const path of ["/today", "/journal", "/journal/new"]) {
+  for (const path of ["/today", "/journal", "/journal/new", "/journal/passages"]) {
     await page.goto(path);
     await expect(page).toHaveURL(/\/login/);
   }
