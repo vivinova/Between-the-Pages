@@ -9,7 +9,7 @@ repo). This README covers what's implemented and how to run it.
 
 ## Status
 
-**Phase 2 of 6 (Journal) is complete.** See [Implementation status](#implementation-status)
+**Phase 3 of 6 (Publishing) is complete.** See [Implementation status](#implementation-status)
 below for what exists today versus what's still a placeholder.
 
 ## Stack
@@ -30,9 +30,24 @@ below for what exists today versus what's still a placeholder.
 - **Private journal entries and public "books" are separate database
   records.** `journal_entries` is never exposed by RLS to anyone but its
   owner — not even to the service role from client-reachable code paths.
-  When Publishing (Phase 3) is built, `books.source_entry_id` will link a
-  public excerpt back to its private source for the owner's and moderators'
-  audit trail only; it is never joined into a reader-facing query.
+  `books.source_entry_id` links a public excerpt back to its private source
+  for the owner's and moderators' own traceability only; it is never joined
+  into a reader-facing query, and it's set null (not cascaded) if the
+  source entry is later deleted — the book is fully independent from the
+  moment it's created.
+- **RLS alone can't stop a moderation-state bypass, so a trigger does.**
+  Postgres RLS policies can restrict an UPDATE by row ownership, but can't
+  compare a row's old and new values — so "owners can update their own
+  books" as a policy would, by itself, let a user flip their own
+  `pending_review` book straight to `published` with a raw PostgREST call,
+  bypassing the app entirely. `enforce_book_update_limits()` (a BEFORE
+  UPDATE trigger in `0003_publishing.sql`) is the actual enforcement: it
+  locks `shelf_id`/`labels`/`owner_id`/`source_entry_id` after submission,
+  only allows `excerpt_text` to change as part of removal, only allows
+  `published`/`archived` → `archived`/`removed` for the row owner, and is
+  bypassed entirely for `service_role` (the Phase 6 moderator dashboard).
+  Whenever an update needs "only in this state transition" logic, reach for
+  a trigger, not just a policy.
 - **The Supabase service-role key is server-only.** `src/lib/supabase/admin.ts`
   imports the `server-only` package, which fails the build if that module is
   ever pulled into a client bundle. It is reserved for moderation/admin
@@ -87,18 +102,42 @@ below for what exists today versus what's still a placeholder.
   title/body, empty/loading/error states, owner-only access (RLS-enforced;
   a non-owner id resolves to a themed 404)
 
+**Built in Phase 3 (Publishing):**
+- Migration: `shelves` (seeded with the 8 launch shelves) and `books`, a
+  6-state `book_moderation_state` enum, and the `enforce_book_update_limits`
+  trigger described above
+- `src/lib/moderation/`: a `ModerationProvider` interface and a
+  `MockModerationProvider` (crisis-keyword + PII-heuristic based),
+  explicitly marked `isProductionReady: false` and logged as such on first
+  use — see the interface's doc comment before swapping in a real provider
+- `src/lib/moderation/pii.ts`: a heuristic PII detector (reliable for
+  emails/phone numbers, coarse for "possibly a name or place") shared by
+  the pre-submission warning and the moderation provider's risk flagging
+- Leave-a-passage wizard (`/journal/[id]/share`): compose or highlight-and-
+  carry-over text from the entry editor → preview with the PII warning and
+  a required private-entry confirmation → shelf/content-warning/margin-
+  note classification → final anonymous-publishing confirmation → submit.
+  Nothing is written to the database until the final step.
+- Your passages page (`/journal/passages`): the contributor's own books
+  with status badges and archive/remove actions
+
 **Explicitly mocked or deferred — do not treat as production-ready:**
-- There is no publishing flow, library content, interactions, moderation,
-  or admin dashboard yet. `/library`, `/bookmarks`, `/inbox`, `/settings`,
-  and `/journal/[id]/share` are still one-line placeholders stating which
-  phase builds them.
-- No moderation provider exists yet (arrives in Phase 3). When it does, the
-  mock implementation will be clearly labeled as a development-only stub,
-  not a safety system.
-- No rate limiting yet (Phase 6).
+- There is no library content, interactions, or moderator dashboard yet.
+  `/library`, `/bookmarks`, `/inbox`, and `/settings` are still one-line
+  placeholders. A book that lands in `pending_review` has no way to become
+  `published` until the Phase 6 dashboard exists — that's expected, not a
+  bug, for anything the mock provider flags between now and then.
+- The moderation provider is a keyword/regex heuristic, not real safety
+  moderation — see the doc comment on `MockModerationProvider`. It cannot
+  detect harassment, graphic content, or dangerous instructions, and its
+  crisis-language and PII checks are intentionally narrow.
+- No rate limiting yet (Phase 6) — publishing has no submission throttle.
 - Session-interruption recovery relies entirely on the ~1.5s autosave to
   the database — there is no separate localStorage draft layer, so content
   typed in the last second or two before a hard crash is not recovered.
+  This applies to journal entries; the passage-composition step in the
+  leave-a-passage flow isn't persisted at all until final submission
+  (by design — canceling must never affect the private entry).
 
 **What to verify manually:**
 1. Create a real Supabase project and fill in `.env.local` from
@@ -109,7 +148,7 @@ below for what exists today versus what's still a placeholder.
    placeholder credentials, so they don't cover successful auth).
 2. Apply the migrations in `supabase/migrations/` and `supabase/seed.sql`
    to that project (see below) and confirm in the Supabase dashboard that
-   RLS is enabled on all four tables and that a new `profiles` row appears
+   RLS is enabled on all six tables and that a new `profiles` row appears
    automatically when a user signs up.
 3. Confirm `/today`, `/journal`, `/bookmarks`, `/inbox`, `/settings`
    redirect to `/login` when signed out, and are reachable when signed in.
@@ -126,6 +165,24 @@ below for what exists today versus what's still a placeholder.
 7. On `/journal`, confirm search matches on both title and body, and that
    entries you don't own are not retrievable by guessing another entry's
    `/journal/<id>` URL.
+8. Walk the full leave-a-passage flow from an entry: highlight text and
+   confirm it carries over to the share page; compose a passage containing
+   an email address or a name-like phrase and confirm the PII warning
+   appears; submit a benign passage and confirm it shows as "Published" on
+   `/journal/passages`; submit one containing an email address or a phrase
+   like "want to end my life" and confirm it shows as "Pending review"
+   instead. Confirm canceling the flow at any step leaves the journal entry
+   unchanged.
+9. Archive a published passage, then remove it, confirming each requires
+   its own two-step confirmation and that removal actually replaces the
+   stored excerpt text (check the row in the Supabase dashboard).
+10. As a deliberate check of the DB-level enforcement (not just the UI):
+    using the Supabase dashboard's SQL editor or REST API directly as the
+    book's owner, try to update one of your own `pending_review` books'
+    `moderation_state` to `published`, or edit its `excerpt_text` after
+    submission. Both should be rejected by `enforce_book_update_limits`
+    with a raised exception — if either silently succeeds, the trigger has
+    a gap and needs fixing before this phase can be trusted.
 
 ## Getting started
 
@@ -157,9 +214,10 @@ supabase db push
 Without the CLI, paste the contents of each file in
 `supabase/migrations/` (in order) into the Supabase dashboard's SQL editor,
 then run `supabase/seed.sql` the same way to load the 24 seed journal
-prompts. Seed data is real product content (not fictional placeholders), so
-it's safe to run in any environment. Later phases will add clearly-marked
-fictional sample books here, gated so they never reach production.
+prompts and the 8 launch shelves. This seed data is real product content
+(not fictional placeholders), so it's safe to run in any environment. A
+later phase will add clearly-marked fictional sample books here, gated so
+they never reach production.
 
 ### Run locally
 
@@ -200,15 +258,18 @@ src/
     ui/                       # Small shared UI primitives
     today/                     # Today page's prompt card
     journal/                    # Journal entry editor
+    publishing/                  # Leave-a-passage wizard, passage status/actions
   lib/
-    actions/                # Server Actions (auth, journal)
+    actions/                # Server Actions (auth, journal, books)
+    moderation/               # ModerationProvider interface, mock provider, PII heuristic
     supabase/                # Browser/server/admin Supabase clients
     validation/                # Zod schemas shared by forms and actions
     prompts.ts                  # Daily-featured-prompt selection logic
+    content-labels.ts            # Shared content-label metadata (value + display name)
   middleware.ts                 # Session refresh + route protection
 supabase/
   migrations/                     # SQL migrations, applied in order
-  seed.sql                         # Local/dev seed data (24 prompts so far)
+  seed.sql                         # Local/dev seed data (prompts + shelves so far)
 tests/
   unit/                               # Vitest
   e2e/                                 # Playwright
