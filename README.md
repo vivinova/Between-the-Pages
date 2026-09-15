@@ -9,7 +9,7 @@ repo). This README covers what's implemented and how to run it.
 
 ## Status
 
-**Phase 1 of 6 (Foundation) is complete.** See [Implementation status](#implementation-status)
+**Phase 2 of 6 (Journal) is complete.** See [Implementation status](#implementation-status)
 below for what exists today versus what's still a placeholder.
 
 ## Stack
@@ -49,43 +49,83 @@ below for what exists today versus what's still a placeholder.
   `/library` and `/` are intentionally left open — anonymous browsing of
   the library is a product requirement, even though the Library itself
   isn't built until Phase 4.
+- **`src/lib/supabase/types.ts` is hand-written**, matching the migrations
+  in `supabase/migrations/`. It must include `Relationships` on every table
+  and `Views`/`Functions` on the schema object — without them the Supabase
+  client's generics silently fall back to `never` for every `.from(table)`
+  call (no type error, just no column checking at all). Keep
+  `@supabase/ssr` reasonably current, too: an old version pinned against a
+  pre-rewrite `@supabase/supabase-js` type surface breaks the same way,
+  silently. Once the Supabase CLI is available, prefer generating this file
+  (`supabase gen types typescript --local`) over hand-editing it.
 
 ## Implementation status
 
-**Built in Phase 1:**
+**Built in Phase 1 (Foundation):**
 - Project scaffold (Next.js, TypeScript, Tailwind, ESLint, Vitest, Playwright)
 - Supabase browser/server/admin client helpers
 - Database migration: `profiles`, `journal_entries`, `audit_log`, plus the
   `user_role` and `content_label` enums later phases will use
-- Auth flows: sign up (with age attestation), sign in, sign out, request
-  password reset, confirm new password, OAuth-style callback route
+- Auth flows: sign up (with age attestation and required email
+  confirmation), sign in, sign out, request password reset, confirm new
+  password, OAuth-style callback route
 - Base app shell: themed root layout, authenticated app shell with nav,
   public landing page, placeholder pages for Today/Journal/Library/
   Bookmarks/Inbox/Settings
 
+**Built in Phase 2 (Journal):**
+- Migration: `prompts` table + RLS, FK from `journal_entries.prompt_id`
+- Seed: 24 daily journal prompts
+- Today page: deterministic daily featured prompt (`src/lib/prompts.ts`),
+  a client-side "try another prompt" shuffle, write-about-this/write-freely
+  entry points, recent entries
+- Journal editor: create and edit, debounced autosave, manual save,
+  save-status indicator, character/word count, two-step delete
+  confirmation, private-by-default messaging, a (currently stub) entry
+  point into Phase 3's sharing flow
+- Journal history: list sorted by most recently updated, search by
+  title/body, empty/loading/error states, owner-only access (RLS-enforced;
+  a non-owner id resolves to a themed 404)
+
 **Explicitly mocked or deferred — do not treat as production-ready:**
-- There is no daily prompt, journal editor, publishing flow, library
-  content, interactions, moderation, or admin dashboard yet. Every page
-  under `(app)/` beyond auth is a one-line placeholder stating which phase
-  builds it.
+- There is no publishing flow, library content, interactions, moderation,
+  or admin dashboard yet. `/library`, `/bookmarks`, `/inbox`, `/settings`,
+  and `/journal/[id]/share` are still one-line placeholders stating which
+  phase builds them.
 - No moderation provider exists yet (arrives in Phase 3). When it does, the
   mock implementation will be clearly labeled as a development-only stub,
   not a safety system.
 - No rate limiting yet (Phase 6).
+- Session-interruption recovery relies entirely on the ~1.5s autosave to
+  the database — there is no separate localStorage draft layer, so content
+  typed in the last second or two before a hard crash is not recovered.
 
 **What to verify manually:**
 1. Create a real Supabase project and fill in `.env.local` from
-   `.env.example`, then run `npm run dev` and confirm sign-up, sign-in,
-   sign-out, and password reset all work end-to-end against real Supabase
-   Auth (this repo's automated tests only exercise it against a live server
-   with placeholder credentials, so they don't cover successful auth).
-2. Apply `supabase/migrations/0001_foundation.sql` to that project (see
-   below) and confirm in the Supabase dashboard that RLS is enabled on all
-   three tables and that a new `profiles` row appears automatically when a
-   user signs up.
-3. Confirm `/today`, `/journal`, `/bookmarks`, `/inbox`, `/settings` redirect
-   to `/login` when signed out, and are reachable when signed in.
+   `.env.example`, then run `npm run dev` and confirm sign-up (including
+   the "check your email" confirmation step), sign-in, sign-out, and
+   password reset all work end-to-end against real Supabase Auth (this
+   repo's automated tests only exercise it against a live server with
+   placeholder credentials, so they don't cover successful auth).
+2. Apply the migrations in `supabase/migrations/` and `supabase/seed.sql`
+   to that project (see below) and confirm in the Supabase dashboard that
+   RLS is enabled on all four tables and that a new `profiles` row appears
+   automatically when a user signs up.
+3. Confirm `/today`, `/journal`, `/bookmarks`, `/inbox`, `/settings`
+   redirect to `/login` when signed out, and are reachable when signed in.
 4. Confirm `/library` and `/` load without signing in.
+5. On the Today page, confirm the featured prompt is present, "Try another
+   prompt" cycles without a page reload, and both "Write about this" and
+   "Write freely" open the editor correctly (with vs. without the prompt
+   attached).
+6. In the journal editor, type a few words, wait ~2 seconds, and confirm
+   the status changes to "Saved" and the URL updates from `/journal/new`
+   to `/journal/<id>` without a page reload. Refresh the page and confirm
+   the content persisted. Confirm delete requires the two-step
+   confirmation and actually removes the entry.
+7. On `/journal`, confirm search matches on both title and body, and that
+   entries you don't own are not retrievable by guessing another entry's
+   `/journal/<id>` URL.
 
 ## Getting started
 
@@ -115,10 +155,11 @@ supabase db push
 ```
 
 Without the CLI, paste the contents of each file in
-`supabase/migrations/` (in order) into the Supabase dashboard's SQL editor.
-
-`supabase/seed.sql` is currently empty — it will gain shelf and prompt seed
-data in later phases.
+`supabase/migrations/` (in order) into the Supabase dashboard's SQL editor,
+then run `supabase/seed.sql` the same way to load the 24 seed journal
+prompts. Seed data is real product content (not fictional placeholders), so
+it's safe to run in any environment. Later phases will add clearly-marked
+fictional sample books here, gated so they never reach production.
 
 ### Run locally
 
@@ -154,15 +195,20 @@ src/
     (app)/             # Authenticated app shell + Today/Journal/Library/
                          # Bookmarks/Inbox/Settings
     auth/callback/       # Supabase auth code exchange
-  components/ui/          # Small shared UI primitives
+    not-found.tsx          # Themed 404 (also covers non-owner entry ids)
+  components/
+    ui/                       # Small shared UI primitives
+    today/                     # Today page's prompt card
+    journal/                    # Journal entry editor
   lib/
-    actions/                # Server Actions
+    actions/                # Server Actions (auth, journal)
     supabase/                # Browser/server/admin Supabase clients
     validation/                # Zod schemas shared by forms and actions
+    prompts.ts                  # Daily-featured-prompt selection logic
   middleware.ts                 # Session refresh + route protection
 supabase/
   migrations/                     # SQL migrations, applied in order
-  seed.sql                         # Local/dev seed data
+  seed.sql                         # Local/dev seed data (24 prompts so far)
 tests/
   unit/                               # Vitest
   e2e/                                 # Playwright
