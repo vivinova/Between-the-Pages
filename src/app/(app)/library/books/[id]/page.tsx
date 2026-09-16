@@ -7,6 +7,10 @@ import { ContentWarningGate } from "@/components/library/content-warning-gate";
 import { BookmarkButton } from "@/components/library/bookmark-button";
 import { ReportButton } from "@/components/library/report-button";
 import { ReadAnotherButton } from "@/components/library/read-another-button";
+import { NeededThisButton } from "@/components/library/needed-this-button";
+import { PressedFlowerButton } from "@/components/library/pressed-flower-button";
+import { MarginNotesSection } from "@/components/library/margin-notes-section";
+import type { InteractionModerationState } from "@/lib/supabase/types";
 
 export const metadata: Metadata = { title: "A passage" };
 
@@ -33,25 +37,43 @@ export default async function BookDetailPage({
     notFound();
   }
 
-  const [{ data: shelf }, bookmarkCheck, reportCheck] = await Promise.all([
-    supabase.from("shelves").select("id, name, slug").eq("id", book.shelf_id).maybeSingle(),
-    user
-      ? supabase
-          .from("bookmarks")
-          .select("book_id")
-          .eq("reader_id", user.id)
-          .eq("book_id", book.id)
-          .maybeSingle()
-      : Promise.resolve({ data: null }),
-    user
-      ? supabase
-          .from("reports")
-          .select("id")
-          .eq("reporter_id", user.id)
-          .eq("book_id", book.id)
-          .maybeSingle()
-      : Promise.resolve({ data: null }),
-  ]);
+  const [{ data: shelf }, bookmarkCheck, reportCheck, ownInteractions, reportedInteractionIds] =
+    await Promise.all([
+      supabase.from("shelves").select("id, name, slug").eq("id", book.shelf_id).maybeSingle(),
+      user
+        ? supabase
+            .from("bookmarks")
+            .select("book_id")
+            .eq("reader_id", user.id)
+            .eq("book_id", book.id)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+      user
+        ? supabase
+            .from("reports")
+            .select("id")
+            .eq("reporter_id", user.id)
+            .eq("book_id", book.id)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+      user
+        ? supabase
+            .from("interactions")
+            .select("id, type, note_text, moderation_state")
+            .eq("book_id", book.id)
+            .eq("reader_id", user.id)
+        : Promise.resolve({
+            data: [] as {
+              id: string;
+              type: string;
+              note_text: string | null;
+              moderation_state: InteractionModerationState;
+            }[],
+          }),
+      user
+        ? supabase.from("reports").select("interaction_id").eq("reporter_id", user.id)
+        : Promise.resolve({ data: [] as { interaction_id: string | null }[] }),
+    ]);
 
   // Internal ranking signal only — this value is never read back or shown.
   await supabase.rpc("increment_book_view_count", { target_book_id: book.id });
@@ -59,6 +81,30 @@ export default async function BookDetailPage({
   const labelNames = book.labels.map(
     (label) => CONTENT_LABELS.find((c) => c.value === label)?.name ?? label,
   );
+
+  const ownedTypes = new Set((ownInteractions.data ?? []).map((i) => i.type));
+  const ownMarginNoteRow = (ownInteractions.data ?? []).find((i) => i.type === "margin_note");
+
+  const reportedIds = new Set(
+    (reportedInteractionIds.data ?? [])
+      .map((r) => r.interaction_id)
+      .filter((id): id is string => id !== null),
+  );
+
+  let visibleNotesQuery = supabase
+    .from("interactions")
+    .select("id, note_text")
+    .eq("book_id", book.id)
+    .eq("type", "margin_note")
+    .eq("moderation_state", "published")
+    .eq("is_visible_to_readers", true);
+  if (user) {
+    visibleNotesQuery = visibleNotesQuery.neq("reader_id", user.id);
+  }
+  const { data: visibleNotesRaw } = await visibleNotesQuery;
+  const visibleNotes = (visibleNotesRaw ?? [])
+    .filter((note) => !reportedIds.has(note.id))
+    .map((note) => ({ id: note.id, note_text: note.note_text ?? "" }));
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
@@ -86,13 +132,33 @@ export default async function BookDetailPage({
           initiallyBookmarked={Boolean(bookmarkCheck.data)}
           signedIn={Boolean(user)}
         />
+        <NeededThisButton
+          bookId={book.id}
+          initiallyActive={ownedTypes.has("needed_this")}
+          signedIn={Boolean(user)}
+        />
+        <PressedFlowerButton
+          bookId={book.id}
+          initiallyActive={ownedTypes.has("pressed_flower")}
+          signedIn={Boolean(user)}
+        />
       </div>
 
-      <div className="rounded-md border border-wood-400/20 bg-wood-400/5 p-4 text-sm text-wood-600">
-        Gentle responses like &ldquo;I needed this&rdquo; and pressed flowers are coming
-        in Phase 5.
-        {book.allow_margin_notes ? " This contributor is open to margin notes once that arrives." : ""}
-      </div>
+      <MarginNotesSection
+        bookId={book.id}
+        allowMarginNotes={book.allow_margin_notes}
+        signedIn={Boolean(user)}
+        visibleNotes={visibleNotes}
+        ownNote={
+          ownMarginNoteRow
+            ? {
+                id: ownMarginNoteRow.id,
+                note_text: ownMarginNoteRow.note_text ?? "",
+                moderation_state: ownMarginNoteRow.moderation_state,
+              }
+            : null
+        }
+      />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <ReportButton

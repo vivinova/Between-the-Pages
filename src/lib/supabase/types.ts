@@ -32,6 +32,20 @@ export type ReportReason =
   | "immediate_safety_concern"
   | "other";
 
+export type InteractionType = "needed_this" | "pressed_flower" | "margin_note";
+
+export type InteractionModerationState =
+  | "pending_review"
+  | "published"
+  | "rejected"
+  | "removed";
+
+export type NotificationType =
+  | "needed_this"
+  | "pressed_flower"
+  | "margin_note_approved"
+  | "margin_note_rejected";
+
 export interface Database {
   public: {
     Tables: {
@@ -165,7 +179,6 @@ export interface Database {
           notes_visible_to_readers?: boolean;
           moderation_state?: BookModerationState;
           moderation_reasons?: string[];
-          published_at?: string | null;
         };
         Update: Partial<{
           excerpt_text: string;
@@ -199,7 +212,8 @@ export interface Database {
         Row: {
           id: string;
           reporter_id: string;
-          book_id: string;
+          book_id: string | null;
+          interaction_id: string | null;
           reason: ReportReason;
           review_state: "open" | "reviewing" | "resolved" | "dismissed";
           created_at: string;
@@ -207,11 +221,66 @@ export interface Database {
         Insert: {
           id?: string;
           reporter_id: string;
-          book_id: string;
+          book_id?: string | null;
+          interaction_id?: string | null;
           reason: ReportReason;
           review_state?: "open" | "reviewing" | "resolved" | "dismissed";
         };
         Update: never;
+        Relationships: [];
+      };
+      interactions: {
+        Row: {
+          id: string;
+          book_id: string;
+          reader_id: string;
+          type: InteractionType;
+          note_text: string | null;
+          moderation_state: InteractionModerationState;
+          moderation_reasons: string[];
+          is_visible_to_readers: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          book_id: string;
+          reader_id: string;
+          type: InteractionType;
+          note_text?: string | null;
+          moderation_state?: InteractionModerationState;
+          moderation_reasons?: string[];
+          is_visible_to_readers?: boolean;
+        };
+        Update: Partial<{
+          note_text: string | null;
+          moderation_state: InteractionModerationState;
+          moderation_reasons: string[];
+          is_visible_to_readers: boolean;
+        }>;
+        Relationships: [];
+      };
+      notifications: {
+        Row: {
+          id: string;
+          recipient_id: string;
+          type: NotificationType;
+          book_id: string | null;
+          interaction_id: string | null;
+          read_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          recipient_id: string;
+          type: NotificationType;
+          book_id?: string | null;
+          interaction_id?: string | null;
+          read_at?: string | null;
+        };
+        Update: Partial<{
+          read_at: string | null;
+        }>;
         Relationships: [];
       };
       audit_log: {

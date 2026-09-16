@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { submitBookSchema } from "@/lib/validation/publishing";
 import { getModerationProvider } from "@/lib/moderation";
 
@@ -51,8 +52,12 @@ export async function submitBook(input: unknown): Promise<SubmitBookResult> {
 
   const provider = getModerationProvider();
   const result = await provider.checkContent(data.excerptText, "book_excerpt");
-  const moderationState = result.requiresHumanReview ? "pending_review" : "published";
 
+  // The user's own session may only ever insert a book as pending_review —
+  // enforced by RLS (0005_interactions.sql), not just by convention here.
+  // Auto-approving a low-risk submission is a second step below, done with
+  // the admin client, since that's the only credential ever allowed to set
+  // moderation_state to 'published'.
   const { data: book, error } = await supabase
     .from("books")
     .insert({
@@ -63,9 +68,8 @@ export async function submitBook(input: unknown): Promise<SubmitBookResult> {
       labels: data.labels,
       allow_margin_notes: data.allowMarginNotes,
       notes_visible_to_readers: data.allowMarginNotes && data.notesVisibleToReaders,
-      moderation_state: moderationState,
+      moderation_state: "pending_review",
       moderation_reasons: result.reasons,
-      published_at: moderationState === "published" ? new Date().toISOString() : null,
     })
     .select("id")
     .single();
@@ -74,9 +78,21 @@ export async function submitBook(input: unknown): Promise<SubmitBookResult> {
     return { ok: false, error: "Your passage couldn't be submitted. Please try again." };
   }
 
+  let finalState: "published" | "pending_review" = "pending_review";
+  if (!result.requiresHumanReview) {
+    const admin = createAdminClient();
+    const { error: publishError } = await admin
+      .from("books")
+      .update({ moderation_state: "published", published_at: new Date().toISOString() })
+      .eq("id", book.id);
+    if (!publishError) {
+      finalState = "published";
+    }
+  }
+
   revalidatePath("/journal/passages");
   revalidatePath(`/journal/${data.sourceEntryId}/share`);
-  return { ok: true, id: book.id, state: moderationState };
+  return { ok: true, id: book.id, state: finalState };
 }
 
 export async function archiveBook(id: string): Promise<ActionResult> {
@@ -112,5 +128,27 @@ export async function removeBook(id: string): Promise<ActionResult> {
   }
 
   revalidatePath("/journal/passages");
+  return {};
+}
+
+export async function updateBookMarginNoteSettings(
+  id: string,
+  settings: { allowMarginNotes: boolean; notesVisibleToReaders: boolean },
+): Promise<ActionResult> {
+  const supabase = createServerSupabaseClient();
+  const { error } = await supabase
+    .from("books")
+    .update({
+      allow_margin_notes: settings.allowMarginNotes,
+      notes_visible_to_readers: settings.allowMarginNotes && settings.notesVisibleToReaders,
+    })
+    .eq("id", id);
+
+  if (error) {
+    return { error: "Those settings couldn't be saved right now." };
+  }
+
+  revalidatePath("/journal/passages");
+  revalidatePath(`/journal/passages/${id}`);
   return {};
 }

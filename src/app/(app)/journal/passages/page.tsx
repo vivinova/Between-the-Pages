@@ -45,7 +45,17 @@ export default async function PassagesPage() {
                 <span className="text-sm text-wood-500">
                   {shelfNameById.get(book.shelf_id)}
                 </span>
-                <BookActions id={book.id} state={book.moderation_state} />
+                <div className="flex items-center gap-3">
+                  {book.moderation_state === "published" ? (
+                    <Link
+                      href={`/journal/passages/${book.id}`}
+                      className="text-sm font-medium text-dusk-700 underline"
+                    >
+                      Manage margin notes
+                    </Link>
+                  ) : null}
+                  <BookActions id={book.id} state={book.moderation_state} />
+                </div>
               </div>
             </li>
           ))}

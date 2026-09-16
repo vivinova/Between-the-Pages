@@ -34,4 +34,18 @@ describe("mockModerationProvider", () => {
     expect(result.riskLevel).toBe("low");
     expect(result.reasons).toHaveLength(0);
   });
+
+  it("applies the same checks to a margin note as to a book excerpt", async () => {
+    const flagged = await mockModerationProvider.checkContent(
+      "email me at reader@example.com",
+      "margin_note",
+    );
+    expect(flagged.requiresHumanReview).toBe(true);
+
+    const benign = await mockModerationProvider.checkContent(
+      "I have felt this too.",
+      "margin_note",
+    );
+    expect(benign.requiresHumanReview).toBe(false);
+  });
 });

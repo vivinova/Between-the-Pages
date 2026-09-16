@@ -27,12 +27,15 @@ export async function getReaderExclusions(
       .from("reports")
       .select("book_id")
       .eq("reporter_id", userId)
-      .neq("review_state", "dismissed"),
+      .neq("review_state", "dismissed")
+      .not("book_id", "is", null),
   ]);
 
   return {
     blockedLabels: profile?.blocked_labels ?? [],
-    reportedBookIds: (reports ?? []).map((report) => report.book_id),
+    reportedBookIds: (reports ?? [])
+      .map((report) => report.book_id)
+      .filter((id): id is string => id !== null),
   };
 }
 
