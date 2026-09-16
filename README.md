@@ -9,7 +9,7 @@ repo). This README covers what's implemented and how to run it.
 
 ## Status
 
-**Phase 3 of 6 (Publishing) is complete.** See [Implementation status](#implementation-status)
+**Phase 4 of 6 (Library) is complete.** See [Implementation status](#implementation-status)
 below for what exists today versus what's still a placeholder.
 
 ## Stack
@@ -62,8 +62,18 @@ below for what exists today versus what's still a placeholder.
   which also redirects unauthenticated visitors away from account-only
   routes (`/today`, `/journal`, `/bookmarks`, `/inbox`, `/settings`).
   `/library` and `/` are intentionally left open — anonymous browsing of
-  the library is a product requirement, even though the Library itself
-  isn't built until Phase 4.
+  the library is a product requirement.
+- **A `SECURITY DEFINER` RPC, not RLS, handles view counting.** Any reader —
+  including anon — needs to bump a published book's `view_count`, but "owners
+  can update their own books" RLS means only the owner could otherwise write
+  to that row at all. `increment_book_view_count(target_book_id)` runs as
+  its (non-RLS-bound) owner and is deliberately narrow: its SQL body can
+  only ever touch `view_count`, only on a `published` row — there's no way
+  to smuggle another column change through it. `view_count` itself is never
+  selected into any reader-facing query; it exists purely to bias "which
+  book should this reader see next" toward less-seen books (see
+  `pickLibraryBook`) and is never counted, compared, or displayed as a
+  number anywhere in the UI, per the product requirement.
 - **`src/lib/supabase/types.ts` is hand-written**, matching the migrations
   in `supabase/migrations/`. It must include `Relationships` on every table
   and `Views`/`Functions` on the schema object — without them the Supabase
@@ -121,17 +131,55 @@ below for what exists today versus what's still a placeholder.
 - Your passages page (`/journal/passages`): the contributor's own books
   with status badges and archive/remove actions
 
+**Built in Phase 4 (Library):**
+- Migration: `books.view_count` + the `increment_book_view_count` RPC
+  described above, `bookmarks` (private to the reader), `reports` (9
+  reasons, one per reader per book, immediately excludes that book from the
+  reporter's own future queries)
+- `pickLibraryBook` (`src/lib/actions/library.ts`): the single selection
+  function behind shelf entry, Find Me Something, and "read/find another" —
+  respects blocked labels, previously-reported books, and (for Find Me
+  Something) the reader's own books, and approximates "prioritize fewer
+  views" by capping candidates to the 15 least-viewed and picking randomly
+  among them
+- Library landing (`/library`): shelf grid, "recently added" (no
+  popularity ranking, no infinite scroll), Find Me Something entry point
+- Shelf browsing (`/library/shelves/[slug]`): picks one eligible book and
+  goes straight to it — no list view, consistent with "one book at a time"
+- Find Me Something (`/library/find`): choose a shelf or "surprise me"
+- Book reader (`/library/books/[id]`): content-warning gate before
+  revealing labeled text, bookmark, report, shelf-aware "read/find
+  another"; never renders owner identity, exact date, or any count
+- Bookmarks page: real implementation, with lazy cleanup of bookmarks
+  pointing at books that are no longer published
+
 **Explicitly mocked or deferred — do not treat as production-ready:**
-- There is no library content, interactions, or moderator dashboard yet.
-  `/library`, `/bookmarks`, `/inbox`, and `/settings` are still one-line
-  placeholders. A book that lands in `pending_review` has no way to become
-  `published` until the Phase 6 dashboard exists — that's expected, not a
-  bug, for anything the mock provider flags between now and then.
+- There is no reader/contributor interaction (I needed this, pressed
+  flowers, margin notes), inbox, or moderator dashboard yet. `/inbox` and
+  `/settings` are still one-line placeholders, and the book reader shows a
+  static note that gentle responses are coming in Phase 5.
+- A book that lands in `pending_review` has no way to become `published`
+  until the Phase 6 dashboard exists — that's expected, not a bug, for
+  anything the mock moderation provider flags.
 - The moderation provider is a keyword/regex heuristic, not real safety
   moderation — see the doc comment on `MockModerationProvider`. It cannot
   detect harassment, graphic content, or dangerous instructions, and its
   crisis-language and PII checks are intentionally narrow.
-- No rate limiting yet (Phase 6) — publishing has no submission throttle.
+- Reports are filed and immediately hide the book from the reporter, but
+  there is no moderator queue yet to actually review, resolve, or escalate
+  them — `review_state` just sits at `open`.
+- No rate limiting yet (Phase 6) — publishing, bookmarking, and reporting
+  have no submission throttle.
+- No blocked-topic Settings UI yet (Phase 6) — `profiles.blocked_labels` is
+  already respected everywhere the library queries for eligible books, but
+  there's no page to actually set it, so it stays empty (no filtering) for
+  every account until then.
+- No fictional sample books are seeded. Seeding a book requires a real
+  `auth.users` row (the FK chain is `books.owner_id → profiles.id →
+  auth.users.id`), which a plain SQL seed file can't create — that needs
+  the Supabase Admin API. The library will be empty until at least one book
+  is published through Phase 3's own flow, or until a dedicated
+  service-role seed script is written.
 - Session-interruption recovery relies entirely on the ~1.5s autosave to
   the database — there is no separate localStorage draft layer, so content
   typed in the last second or two before a hard crash is not recovered.
@@ -148,7 +196,7 @@ below for what exists today versus what's still a placeholder.
    placeholder credentials, so they don't cover successful auth).
 2. Apply the migrations in `supabase/migrations/` and `supabase/seed.sql`
    to that project (see below) and confirm in the Supabase dashboard that
-   RLS is enabled on all six tables and that a new `profiles` row appears
+   RLS is enabled on all eight tables and that a new `profiles` row appears
    automatically when a user signs up.
 3. Confirm `/today`, `/journal`, `/bookmarks`, `/inbox`, `/settings`
    redirect to `/login` when signed out, and are reachable when signed in.
@@ -183,6 +231,25 @@ below for what exists today versus what's still a placeholder.
     submission. Both should be rejected by `enforce_book_update_limits`
     with a raised exception — if either silently succeeds, the trigger has
     a gap and needs fixing before this phase can be trusted.
+11. Publish 2-3 books through the Phase 3 flow (different shelves, at least
+    one with a content label) so the library has something to show, then:
+    open `/library` and confirm the shelf grid and "recently added" both
+    load; open a labeled book and confirm the content-warning gate hides
+    the text until you click Continue; bookmark it, then confirm it shows
+    up on `/bookmarks` and that removing it there also un-bookmarks it (no
+    longer showing as "Bookmarked" if you revisit the book); report a
+    different book and confirm it stops appearing in your own shelf/Find Me
+    Something results afterward (a second Supabase account should still see
+    it normally — reports are per-reporter).
+12. Click "Read another from this shelf" and "Find me something" (both
+    "surprise me" and a specific shelf) enough times to confirm they don't
+    immediately repeat the book you were just on, and that a shelf/search
+    with zero eligible books shows the empty state instead of erroring.
+13. Confirm the book reader never shows who wrote a passage, its exact
+    date, a view or reaction count, or a link to the same contributor's
+    other books — there is no code path that should be able to show any of
+    these, but this is worth eyeballing directly since it's a hard privacy
+    requirement.
 
 ## Getting started
 
@@ -259,13 +326,16 @@ src/
     today/                     # Today page's prompt card
     journal/                    # Journal entry editor
     publishing/                  # Leave-a-passage wizard, passage status/actions
+    library/                      # Content-warning gate, bookmark/report, "read another"
   lib/
-    actions/                # Server Actions (auth, journal, books)
+    actions/                # Server Actions (auth, journal, books, library, bookmarks, reports)
     moderation/               # ModerationProvider interface, mock provider, PII heuristic
     supabase/                # Browser/server/admin Supabase clients
     validation/                # Zod schemas shared by forms and actions
     prompts.ts                  # Daily-featured-prompt selection logic
     content-labels.ts            # Shared content-label metadata (value + display name)
+    library.ts                    # Reader exclusions (blocked labels, reported books)
+    random.ts                      # pickRandom — used by the discovery picker
   middleware.ts                 # Session refresh + route protection
 supabase/
   migrations/                     # SQL migrations, applied in order
