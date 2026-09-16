@@ -59,6 +59,7 @@ export const RATE_LIMITS = {
   submitReply: { action: "submit_reply", limit: 20, windowMinutes: 60 },
   react: { action: "react", limit: 60, windowMinutes: 60 },
   report: { action: "report", limit: 10, windowMinutes: 60 },
+  adminLogin: { action: "admin_login", limit: 10, windowMinutes: 15 },
 } as const satisfies Record<string, RateLimitConfig>;
 
 export const RATE_LIMIT_MESSAGE =

@@ -7,11 +7,13 @@ anonymously.
 
 ## Status
 
-**Phases 1-3 of 4 are complete.** You can browse categories, read a
-confession, submit one (real moderation gate, real anonymous delete link),
-react to it, reply on it, report it, and save it to a local list. The admin
-moderation dashboard (Phase 4) is not built yet — there is currently no way
-to review the moderation queue except directly in the Supabase dashboard.
+**All 4 phases are complete — this is a feature-complete rebuild**, not a
+production-ready deployment. You can browse categories, read a confession,
+submit one (real moderation gate, real anonymous delete link), react to it,
+reply on it, report it, save it to a local list, and — as a moderator with
+the shared passphrase — review the pending queue, act on reports, and see
+the audit history. See [Implementation status](#implementation-status) for
+what's real versus deferred before treating this as launch-ready.
 
 ### Why the pivot
 
@@ -109,6 +111,28 @@ model) without the accounts surface.
   violation (`23505`) — `reportContent` catches specifically that code and
   still returns `ok: true`, since from the visitor's perspective nothing
   went wrong; they already reported it.
+- **The admin passphrase is compared as a fixed-length hash, not the raw
+  strings.** `passwordsMatch()` (`src/lib/admin/password.ts`) SHA-256s both
+  the submitted and expected password before calling `timingSafeEqual` —
+  comparing the raw strings directly would either leak timing information
+  proportional to how many leading characters match, or throw outright
+  when the submitted password happens to be a different length than
+  `ADMIN_PASSWORD` (`timingSafeEqual` requires equal-length buffers).
+  Hashing first sidesteps both problems with one fixed-size comparison.
+- **`/admin/login` is a sibling of the dashboard routes, not their
+  parent.** The dashboard nav/sign-out chrome lives in
+  `src/app/admin/(dashboard)/layout.tsx`, a route group that doesn't
+  affect the URL — `/admin/login` sits outside it entirely, so the
+  pre-auth page never renders the "you're signed in" dashboard shell
+  around itself, mirroring the previous version's `(app)`/`(auth)` route
+  group split.
+- **Real bug caught while building this phase's Playwright coverage**:
+  the login form's password `<Field>` had no `name` or `id`, so its
+  `<label>` had nothing to point `htmlFor` at — invisible in a glance at
+  the rendered page, but it meant the input had no accessible name
+  (caught by both `getByLabel()` failing in Playwright and, independently,
+  the axe-core scan of `/admin/login`) and no working `htmlFor`
+  association for a screen reader either. Fixed by passing `name="password"`.
 
 ## Implementation status
 
@@ -188,15 +212,49 @@ model) without the accounts surface.
   client-side, no server round-trip, no accounts to sync across devices —
   by design, per the earlier decision to keep bookmarking simple.
 
-**Explicitly mocked or deferred — this is an in-progress rebuild, not a
-finished app:**
-- **The moderation dashboard doesn't exist yet** — Phase 4. There is
-  currently no way to approve/reject a `pending_review` confession or
-  reply, or review a report, except directly in the Supabase dashboard.
+**Built in Phase 4 (Admin + safety + polish):**
+- `/admin/login`: the passphrase form (`LoginForm`), rate-limited
+  (10 attempts/15min per fingerprint) same as every other public action.
+  `loginAdmin` (`src/lib/actions/admin-auth.ts`) compares the submitted
+  password via `passwordsMatch()` (see the architecture note above) and,
+  on success, sets the HMAC-signed session cookie from Phase 1's
+  `createAdminSessionToken()`.
+- `/admin` (overview): counts of pending confessions, pending replies,
+  and open reports, read via the admin client (RLS hides pending/open
+  content from every role, moderator included, since there's no session
+  for RLS to grant visibility to — same reasoning as Phase 1's rate
+  limiting).
+- `/admin/confessions`, `/admin/replies`: approve/reject queues
+  (`src/lib/actions/moderation.ts`), each gated by `requireAdminSession()`
+  and logged via `recordAuditLog()`. Approving sets `published_at`;
+  rejecting and removing both set `moderation_state = 'removed'` (the
+  enum has no separate "rejected" state — the two actions are
+  semantically different but land on the same state, logged under
+  different audit actions so history can still distinguish "never
+  approved" from "taken down after publishing").
+- `/admin/reports`: resolve/dismiss/escalate, plus a one-click "Remove
+  content" shortcut (`removeReportedContent`) that takes down the
+  reported confession or reply and resolves the report in one step.
+- `/admin/history`: the last 100 `audit_log` entries, newest first.
+- Real bug caught by this phase's own Playwright coverage: see the
+  `<Field>` `name` fix in the architecture notes above.
+- `tests/e2e/admin-auth.spec.ts`: drives the actual login → dashboard →
+  sign-out → re-gate flow in a real browser (not mocked) — the redirect-
+  and-wrong-password checks always run; the full correct-password flow
+  only runs when `ADMIN_PASSWORD` is present in `.env.local` (Playwright
+  now parses it directly, since the test runner is a separate process
+  from the Next.js server and doesn't inherit its `.env.local` loading —
+  see `playwright.config.ts`).
+
+**Explicitly mocked or deferred — this is a feature-complete rebuild, not
+a launch-ready app:**
 - **No reply editing or deletion** — unlike confessions, a submitted
   reply has no owner-token delete flow. Deferred to keep Phase 3's scope
   tight; the same bearer-token pattern confessions use would extend to
   replies without much new design if it's wanted later.
+- **No admin UI to change `ADMIN_PASSWORD` or add a second moderator** —
+  it's a single shared secret, rotated by redeploying with a new value.
+  There's also no lockout beyond the 10-attempts/15-minute rate limit.
 - **The moderation provider defaults to the local keyword/regex mock**,
   same as before — set `MODERATION_PROVIDER=anthropic` and
   `ANTHROPIC_API_KEY` for real moderation. See the previous phase's README
@@ -210,10 +268,9 @@ finished app:**
   infrastructure (a transactional email provider, an unsubscribe flow, a
   scheduled job) to everything else in this MVP combined, and isn't needed
   for the core confession/react/reply loop to work.
-- **No admin UI to change `ADMIN_PASSWORD`** — it's a single env var,
-  rotated by redeploying with a new value.
 - **Saved/bookmarked confessions are localStorage-only, client-side, no
-  server round-trip** (per-device, not portable) — Phase 3.
+  server round-trip** (per-device, not portable) — by design, see Phase 3
+  above.
 
 **What to verify manually** (this sandbox has no real Supabase project, so
 none of this has been exercised against a live database — see "Getting
@@ -256,6 +313,33 @@ started" below):
     `/saved`, then remove it from `/saved` and confirm it's gone from both
     places. Confirm `/saved` in a private window shows nothing (per-device
     by design).
+11. Sign in at `/admin/login` with the real `ADMIN_PASSWORD`, confirm
+    `/admin` shows accurate pending/open counts, then sign out and confirm
+    `/admin` redirects back to the login page.
+12. On `/admin/confessions`, approve a pending confession and confirm it
+    appears in its category; reject another and confirm it never appears
+    publicly. Do the same for a pending reply on `/admin/replies`.
+13. File a report, then on `/admin/reports` try Resolve, Dismiss, and
+    Escalate on different reports, and use "Remove content" on one and
+    confirm the underlying confession or reply is gone from the public
+    site immediately.
+14. Open `/admin/history` and confirm every action from items 12-13 shows
+    up with the correct action and entity type.
+15. Try 11 wrong-password attempts at `/admin/login` in under 15 minutes
+    and confirm the 11th is rejected as a rate limit rather than as
+    "Incorrect password." — confirms `RATE_LIMITS.adminLogin` is actually
+    wired in, not just declared.
+16. With `MODERATION_PROVIDER=anthropic` and a real `ANTHROPIC_API_KEY`
+    set, repeat items 3 and 8 (an email address or crisis-adjacent phrase
+    still queues for review) — then submit a confession that's graphic,
+    hateful, or sexually explicit (content the keyword mock would never
+    catch) and confirm it queues for review with the correct reason(s) on
+    `/admin/confessions`. Also confirm ordinary writing about a hard past
+    experience still auto-publishes — over-flagging normal confessions is
+    a real failure mode here, not just under-flagging. Then unset
+    `ANTHROPIC_API_KEY` (leaving `MODERATION_PROVIDER=anthropic`) and
+    submit once more, confirming it fails closed to "awaiting review"
+    instead of erroring or silently publishing.
 
 ## Getting started
 
@@ -286,6 +370,14 @@ supabase db push
 psql "$(supabase db url)" -f supabase/seed.sql   # or run seed.sql via the dashboard's SQL editor
 ```
 
+### Moderator access
+
+There's no signup flow for moderators — set `ADMIN_PASSWORD` (and a
+separate, random `ADMIN_SESSION_SECRET`) in your environment, then sign in
+at `/admin/login` with that passphrase. Anyone who has the passphrase has
+full moderator access; there's no per-person distinction to revoke, so
+rotating it means redeploying with a new value.
+
 ### Run locally
 
 ```bash
@@ -304,11 +396,41 @@ npm run build
 
 ## Environment variables
 
-See `.env.example`. `SUPABASE_SERVICE_ROLE_KEY`, `ANTHROPIC_API_KEY`, and
-`ADMIN_SESSION_SECRET` must never be committed and must never be referenced
-from a file that can end up in a client bundle — `src/lib/supabase/admin.ts`
-and `src/lib/admin/session.ts` are the only places that read them,
-`admin.ts` guarded by the `server-only` package.
+See `.env.example`. `SUPABASE_SERVICE_ROLE_KEY`, `ANTHROPIC_API_KEY`,
+`ADMIN_PASSWORD`, and `ADMIN_SESSION_SECRET` must never be committed and
+must never be referenced from a file that can end up in a client bundle.
+Each is read from exactly one place: `src/lib/supabase/admin.ts`
+(guarded by the `server-only` package), `src/lib/moderation/anthropic-provider.ts`,
+`src/lib/actions/admin-auth.ts`, and `src/lib/admin/session.ts`,
+respectively — all server-only modules.
+
+## Deployment
+
+This is a stock Next.js 14 App Router project — Vercel needs no special
+configuration beyond environment variables.
+
+1. Push this repo to GitHub (or GitLab/Bitbucket) and import it in Vercel,
+   or run `vercel` from the project root.
+2. In the Vercel project's Settings → Environment Variables, set
+   `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
+   `SUPABASE_SERVICE_ROLE_KEY`, `NEXT_PUBLIC_SITE_URL` (your production
+   URL), `ADMIN_PASSWORD`, and `ADMIN_SESSION_SECRET` (generate with
+   `openssl rand -base64 32` — different from `ADMIN_PASSWORD`). Also set
+   `MODERATION_PROVIDER=anthropic` and `ANTHROPIC_API_KEY` — leaving
+   `MODERATION_PROVIDER` unset means real user content is moderated by the
+   local keyword mock, not something a production deployment should ship
+   with. Use a **separate Supabase project** for production versus local
+   development.
+3. In the Supabase dashboard for that production project, apply
+   `supabase/migrations/0001_confessions.sql` and `supabase/seed.sql` (real
+   product content — the 12 categories — safe for production).
+4. Deploy, then sign in at `<your-domain>/admin/login` with `ADMIN_PASSWORD`
+   to confirm moderator access works before treating it as live.
+5. Before treating it as live: run manual-verification item 16 above
+   against the production project to confirm `MODERATION_PROVIDER=anthropic`
+   is actually taking effect — none of this repo's own checks
+   (lint/typecheck/tests/build) call the real classifier. Then work
+   through the rest of the "Explicitly mocked or deferred" list.
 
 ## Project structure
 
@@ -324,12 +446,19 @@ src/
     confessions/random/            # "Surprise me" redirect
     saved/                        # localStorage-only saved confessions list
     support/                     # Crisis resource page
-    admin/                        # Moderator dashboard — Phase 4
+    admin/
+      login/                       # Passphrase sign-in (public — the gate itself)
+      (dashboard)/                  # Overview, confessions/replies/reports
+                                     # queues, history — route group, no
+                                     # effect on the URL; keeps the dashboard
+                                     # chrome out of the login page
     layout.tsx                   # Root layout: nav, footer disclaimer, skip-link
   components/
     confess/                     # ConfessForm, DeleteConfessionButton
     confessions/                  # ReactionButtons, ReplyForm, ReportButton,
                                    # SaveConfessionButton
+    admin/                        # LoginForm, the three moderation queue-item
+                                   # components
     support/                     # CrisisResourceNotice
     ui/                           # Button, LinkButton, Field
   lib/
@@ -337,12 +466,15 @@ src/
       confessions.ts              # submitConfession, deleteMyConfession
       interactions.ts             # toggleReaction, submitReply, reaction reads
       reports.ts                  # reportContent
+      admin-auth.ts                # loginAdmin, logoutAdmin
+      moderation.ts                # approve/reject/remove, report review actions
     validation/
       confessions.ts              # Zod schema for submission
       interactions.ts             # Zod schemas for reactions/replies/reports
     admin/
       session.ts                  # Stateless HMAC session token (Edge + Node safe)
       require-admin-session.ts    # The real /admin auth boundary (server actions)
+      password.ts                  # Timing-safe passphrase comparison
       audit-log.ts                 # recordAuditLog() — service-role only
     moderation/                   # ModerationProvider interface, mock + Anthropic
                                    # providers, PII heuristic, shared crisis check
@@ -351,14 +483,17 @@ src/
     fingerprint.ts                # Anonymous cookie id + IP → SHA-256 hash
     my-confessions.ts             # localStorage record of confessions this browser submitted
     saved-confessions.ts          # localStorage "save for later" list
-    report-reasons.ts             # The 8 report reasons, shared by the form and (later) /admin
+    report-reasons.ts             # The 8 report reasons, shared by the form and /admin
     rate-limit.ts                  # Sliding-window limiter, admin-client-only
 supabase/
   migrations/0001_confessions.sql
   seed.sql                       # The 12 confession categories
 tests/
   unit/                          # Vitest — moderation, PII/crisis heuristics,
-                                  # admin session tokens, confession/interaction validation
-  e2e/                           # Playwright — accessibility scan + navigation,
-                                  # every page reachable without the admin passphrase
+                                  # admin session tokens + passphrase comparison,
+                                  # confession/interaction validation
+  e2e/                           # Playwright — accessibility scan, navigation,
+                                  # and a real admin login → dashboard → sign-out
+                                  # flow (playwright.config.ts parses .env.local
+                                  # directly so ADMIN_PASSWORD reaches the test)
 ```

@@ -2,10 +2,10 @@ import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 
 // Every page in this app is reachable without an account — there are no
-// accounts. /admin needs a real Supabase project and the admin passphrase
-// to reach past its login gate, so it isn't scanned here — see the
-// README's manual verification checklist.
-const PAGES_TO_SCAN = ["/", "/categories", "/confess", "/support", "/saved"];
+// accounts. /admin/login is public (it's the gate itself); pages behind it
+// need a real Supabase project to have anything to moderate, so they
+// aren't scanned here — see the README's manual verification checklist.
+const PAGES_TO_SCAN = ["/", "/categories", "/confess", "/support", "/saved", "/admin/login"];
 
 for (const path of PAGES_TO_SCAN) {
   test(`${path} has no automatically detectable accessibility violations`, async ({ page }) => {
