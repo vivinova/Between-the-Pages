@@ -5,7 +5,7 @@ import AxeBuilder from "@axe-core/playwright";
 // accounts. /admin needs a real Supabase project and the admin passphrase
 // to reach past its login gate, so it isn't scanned here — see the
 // README's manual verification checklist.
-const PAGES_TO_SCAN = ["/", "/categories", "/confess", "/support"];
+const PAGES_TO_SCAN = ["/", "/categories", "/confess", "/support", "/saved"];
 
 for (const path of PAGES_TO_SCAN) {
   test(`${path} has no automatically detectable accessibility violations`, async ({ page }) => {

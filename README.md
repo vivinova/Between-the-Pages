@@ -7,12 +7,11 @@ anonymously.
 
 ## Status
 
-**Phases 1-2 of 4 are complete.** You can browse categories, read a
-confession, and submit one (real moderation gate, real anonymous delete
-link). Live reactions/replies (Phase 3) and the admin moderation dashboard
-(Phase 4) are not built yet — nobody can react to or reply on a confession,
-and there is no way to review the moderation queue except directly in the
-Supabase dashboard.
+**Phases 1-3 of 4 are complete.** You can browse categories, read a
+confession, submit one (real moderation gate, real anonymous delete link),
+react to it, reply on it, report it, and save it to a local list. The admin
+moderation dashboard (Phase 4) is not built yet — there is currently no way
+to review the moderation queue except directly in the Supabase dashboard.
 
 ### Why the pivot
 
@@ -94,6 +93,22 @@ model) without the accounts surface.
   re-checking the same cookie inside every moderation server action is the
   real boundary, since a direct POST to a server action skips middleware
   entirely.
+- **Reaction dedup ("has this visitor already reacted?") goes through the
+  admin client end to end**, unlike confessions/replies. There's no text
+  to moderate in a reaction, so the only interesting question is identity —
+  and like rate limiting, RLS has no way to verify "this fingerprint
+  belongs to the requester," so `toggleReaction` reads and writes via the
+  admin client, with the fingerprint always computed server-side from the
+  request's own cookies (`getFingerprintHash()`), never trusted from
+  client input. The unique index on `(confession_id, type,
+  fingerprint_hash)` is a second backstop against a race inserting a
+  duplicate reaction.
+- **A duplicate report isn't an error.** `reports` has a unique constraint
+  on `(target_type, target_id, reporter_fingerprint_hash)`, so a second
+  report from the same visitor on the same thing raises a Postgres unique
+  violation (`23505`) — `reportContent` catches specifically that code and
+  still returns `ok: true`, since from the visitor's perspective nothing
+  went wrong; they already reported it.
 
 ## Implementation status
 
@@ -154,11 +169,34 @@ model) without the accounts surface.
   `DeleteConfessionButton` that checks `localStorage` client-side after
   mount and renders nothing if this browser didn't submit this confession.
 
+**Built in Phase 3 (Live interactions):**
+- `toggleReaction` (`src/lib/actions/interactions.ts`): "Me too" and
+  "Sending love" on `/confessions/[id]`, deduped per fingerprint via the
+  admin client (see the architecture note above), with an optimistic UI
+  (`ReactionButtons`) that rolls back if the server call fails or
+  disagrees with the client's assumption.
+- `submitReply`: the same two-step pending-review/promote pattern as
+  confessions, applied to a 500-character reply. Replies list oldest
+  first under a confession (a natural conversation order, unlike the
+  confessions feed itself, which is newest-first).
+- `reportContent` (`src/lib/actions/reports.ts`): reports a confession or
+  a reply against one of 8 reasons (`src/lib/report-reasons.ts`), rate
+  limited, silently idempotent on a duplicate report from the same
+  visitor (see the architecture note above). No report reading/review UI
+  yet — that's `/admin` in Phase 4.
+- Save for later (`src/lib/saved-confessions.ts`, `/saved`): entirely
+  client-side, no server round-trip, no accounts to sync across devices —
+  by design, per the earlier decision to keep bookmarking simple.
+
 **Explicitly mocked or deferred — this is an in-progress rebuild, not a
 finished app:**
-- **Reactions, replies, and the moderation dashboard don't exist yet** —
-  Phases 3 and 4. There is currently no way to approve/reject a
-  `pending_review` confession except directly in the Supabase dashboard.
+- **The moderation dashboard doesn't exist yet** — Phase 4. There is
+  currently no way to approve/reject a `pending_review` confession or
+  reply, or review a report, except directly in the Supabase dashboard.
+- **No reply editing or deletion** — unlike confessions, a submitted
+  reply has no owner-token delete flow. Deferred to keep Phase 3's scope
+  tight; the same bearer-token pattern confessions use would extend to
+  replies without much new design if it's wanted later.
 - **The moderation provider defaults to the local keyword/regex mock**,
   same as before — set `MODERATION_PROVIDER=anthropic` and
   `ANTHROPIC_API_KEY` for real moderation. See the previous phase's README
@@ -200,6 +238,24 @@ started" below):
    present in the SQL file.
 6. Click "Surprise me" a few times and confirm it lands on different
    published confessions (and doesn't error when there are very few).
+7. On a published confession, click "Me too" and confirm the count goes up
+   and the button stays highlighted after a page refresh; click it again
+   and confirm it un-reacts. Open the same confession in a private window
+   and confirm the button starts unhighlighted there (a different
+   fingerprint).
+8. Submit an ordinary reply and confirm it appears immediately; submit one
+   containing an email address and confirm it doesn't appear but the
+   confession's reply count/list doesn't error — check the Supabase
+   dashboard and confirm it's sitting there as `pending_review`.
+9. Report a confession, then try reporting it again from the same browser
+   and confirm the UI doesn't show an error (the duplicate is silently
+   accepted per the architecture note above) — then check the Supabase
+   dashboard and confirm exactly one row exists in `reports` for it, not
+   two.
+10. Save a confession from its detail page, confirm it appears on
+    `/saved`, then remove it from `/saved` and confirm it's gone from both
+    places. Confirm `/saved` in a private window shows nothing (per-device
+    by design).
 
 ## Getting started
 
@@ -262,19 +318,28 @@ src/
     page.tsx                    # Landing page
     categories/                  # Category grid
     categories/[slug]/            # Published confessions in one category
-    confess/                     # Submission form (real)
-    confessions/[id]/              # Confession detail + delete-your-own
+    confess/                     # Submission form
+    confessions/[id]/              # Confession detail: reactions, replies,
+                                    # report, save, delete-your-own
     confessions/random/            # "Surprise me" redirect
+    saved/                        # localStorage-only saved confessions list
     support/                     # Crisis resource page
     admin/                        # Moderator dashboard — Phase 4
     layout.tsx                   # Root layout: nav, footer disclaimer, skip-link
   components/
     confess/                     # ConfessForm, DeleteConfessionButton
+    confessions/                  # ReactionButtons, ReplyForm, ReportButton,
+                                   # SaveConfessionButton
     support/                     # CrisisResourceNotice
     ui/                           # Button, LinkButton, Field
   lib/
-    actions/confessions.ts        # submitConfession, deleteMyConfession
-    validation/confessions.ts      # Zod schemas
+    actions/
+      confessions.ts              # submitConfession, deleteMyConfession
+      interactions.ts             # toggleReaction, submitReply, reaction reads
+      reports.ts                  # reportContent
+    validation/
+      confessions.ts              # Zod schema for submission
+      interactions.ts             # Zod schemas for reactions/replies/reports
     admin/
       session.ts                  # Stateless HMAC session token (Edge + Node safe)
       require-admin-session.ts    # The real /admin auth boundary (server actions)
@@ -285,13 +350,15 @@ src/
     env.ts                       # Typed, fail-fast environment variable access
     fingerprint.ts                # Anonymous cookie id + IP → SHA-256 hash
     my-confessions.ts             # localStorage record of confessions this browser submitted
+    saved-confessions.ts          # localStorage "save for later" list
+    report-reasons.ts             # The 8 report reasons, shared by the form and (later) /admin
     rate-limit.ts                  # Sliding-window limiter, admin-client-only
 supabase/
   migrations/0001_confessions.sql
   seed.sql                       # The 12 confession categories
 tests/
   unit/                          # Vitest — moderation, PII/crisis heuristics,
-                                  # admin session tokens, confession validation
+                                  # admin session tokens, confession/interaction validation
   e2e/                           # Playwright — accessibility scan + navigation,
                                   # every page reachable without the admin passphrase
 ```
