@@ -9,7 +9,7 @@ repo). This README covers what's implemented and how to run it.
 
 ## Status
 
-**Phase 4 of 6 (Library) is complete.** See [Implementation status](#implementation-status)
+**Phase 5 of 6 (Community interactions) is complete.** See [Implementation status](#implementation-status)
 below for what exists today versus what's still a placeholder.
 
 ## Stack
@@ -48,10 +48,33 @@ below for what exists today versus what's still a placeholder.
   bypassed entirely for `service_role` (the Phase 6 moderator dashboard).
   Whenever an update needs "only in this state transition" logic, reach for
   a trigger, not just a policy.
+- **The INSERT path needs the same discipline as UPDATE — a gap found and
+  fixed while building Phase 5.** The trigger above only guards UPDATEs on
+  an existing row; it took designing `interactions` (which has the exact
+  same "some rows need review, some don't" shape as `books`) to notice
+  that `books`' original INSERT policy checked only `owner_id`, not
+  `moderation_state` — so a raw PostgREST call could create a book already
+  `published`, skipping moderation at creation time entirely. Both tables
+  now enforce the same rule at the RLS INSERT policy: a user's own session
+  may only ever insert `pending_review` (for `books`; `interactions` splits
+  this by type — `margin_note` must start `pending_review`, the text-free
+  `needed_this`/`pressed_flower` may insert straight to `published` since
+  there's no content to review). Auto-approving a low-risk submission is
+  always a *second* step, done with the admin client
+  (`createAdminClient()`), never the inserting user's own session — so
+  "insert already published" isn't something any client-held credential
+  can do, for either table. `submitBook` and `submitMarginNote` are the
+  reference implementations of this two-step pattern.
 - **The Supabase service-role key is server-only.** `src/lib/supabase/admin.ts`
   imports the `server-only` package, which fails the build if that module is
-  ever pulled into a client bundle. It is reserved for moderation/admin
-  server actions in later phases.
+  ever pulled into a client bundle. It is used for the auto-approve step
+  described below and for `notify()` (`src/lib/notifications.ts`): a
+  notification's `recipient_id` is almost always *someone else* (the book
+  owner, not the reader who triggered it), which the acting user's own
+  session could never legitimately write under "insert your own row" RLS —
+  so notification creation, and the read of the recipient's own
+  `notification_settings` that gates it, both always go through the admin
+  client.
 - **RLS is the real authorization boundary**, not application code. See
   `supabase/migrations/0001_foundation.sql` for the current policies:
   `profiles` (owner read/update only), `journal_entries` (owner-only CRUD,
@@ -153,27 +176,56 @@ below for what exists today versus what's still a placeholder.
 - Bookmarks page: real implementation, with lazy cleanup of bookmarks
   pointing at books that are no longer published
 
+**Built in Phase 5 (Community interactions):**
+- Migration: `interactions` (needed_this/pressed_flower/margin_note, the
+  `enforce_interaction_update_limits` trigger), `notifications`
+  (admin-insert-only), and an extension to `reports` so a report can target
+  a margin note as well as a book
+- I needed this / pressed flower: toggleable, one per reader per book,
+  notify the book owner (skipped for your own book), no public count —
+  same personal-toggle privacy model as bookmarks
+- Margin notes: compose with suggested-prompt starters, 240-char limit,
+  edit while pending, delete anytime, contributor-only per-note visibility
+  toggle, report as abusive. Always inserted as `pending_review`; a
+  low-risk note is promoted to `published` by the admin client, same
+  two-step pattern as `submitBook`
+- Book reader: real `NeededThisButton`/`PressedFlowerButton`, approved and
+  contributor-visible margin notes (excluding any the current reader has
+  personally reported), and a submission form gated on the book's
+  `allow_margin_notes` setting
+- Quiet inbox (`/inbox`): type-specific notification copy, mark
+  read/dismiss/mark-all-read, links back to the relevant book, minimal
+  per-category notification toggles
+- Contributor margin-note management (`/journal/passages/[id]`): accept or
+  stop accepting new notes, change the visibility default, review approved
+  notes with per-note visibility and report-as-abusive
+
 **Explicitly mocked or deferred — do not treat as production-ready:**
-- There is no reader/contributor interaction (I needed this, pressed
-  flowers, margin notes), inbox, or moderator dashboard yet. `/inbox` and
-  `/settings` are still one-line placeholders, and the book reader shows a
-  static note that gentle responses are coming in Phase 5.
-- A book that lands in `pending_review` has no way to become `published`
-  until the Phase 6 dashboard exists — that's expected, not a bug, for
-  anything the mock moderation provider flags.
+- There is no moderator dashboard yet. A book or margin note that lands in
+  `pending_review` has no path to `published` until the Phase 6 dashboard
+  exists — that's expected, not a bug, for anything the mock moderation
+  provider flags.
 - The moderation provider is a keyword/regex heuristic, not real safety
   moderation — see the doc comment on `MockModerationProvider`. It cannot
   detect harassment, graphic content, or dangerous instructions, and its
-  crisis-language and PII checks are intentionally narrow.
-- Reports are filed and immediately hide the book from the reporter, but
-  there is no moderator queue yet to actually review, resolve, or escalate
-  them — `review_state` just sits at `open`.
-- No rate limiting yet (Phase 6) — publishing, bookmarking, and reporting
-  have no submission throttle.
-- No blocked-topic Settings UI yet (Phase 6) — `profiles.blocked_labels` is
-  already respected everywhere the library queries for eligible books, but
-  there's no page to actually set it, so it stays empty (no filtering) for
-  every account until then.
+  crisis-language and PII checks are intentionally narrow. It's applied
+  identically to book excerpts and margin notes.
+- Reports (on books or margin notes) are filed and immediately hide the
+  target from the reporter, but there is no moderator queue yet to
+  actually review, resolve, or escalate them — `review_state` just sits at
+  `open`.
+- `margin_note_rejected` is modeled in the `notification_type` enum but
+  nothing creates one yet, since rejection itself doesn't exist until
+  Phase 6 — whoever builds that dashboard needs to call `notify()` on
+  reject, the same way `submitMarginNote` does on auto-approve.
+- No rate limiting yet (Phase 6) — publishing, interacting, and reporting
+  all have no submission throttle.
+- `/settings` is still a placeholder. `profiles.blocked_labels` and
+  `profiles.notification_settings` are both already respected everywhere
+  they're read (library queries and `notify()`, respectively) — Phase 5
+  added the inbox's own minimal notification-category toggles directly, so
+  that part no longer waits on Phase 6, but blocked-topic management still
+  does.
 - No fictional sample books are seeded. Seeding a book requires a real
   `auth.users` row (the FK chain is `books.owner_id → profiles.id →
   auth.users.id`), which a plain SQL seed file can't create — that needs
@@ -196,7 +248,7 @@ below for what exists today versus what's still a placeholder.
    placeholder credentials, so they don't cover successful auth).
 2. Apply the migrations in `supabase/migrations/` and `supabase/seed.sql`
    to that project (see below) and confirm in the Supabase dashboard that
-   RLS is enabled on all eight tables and that a new `profiles` row appears
+   RLS is enabled on all ten tables and that a new `profiles` row appears
    automatically when a user signs up.
 3. Confirm `/today`, `/journal`, `/bookmarks`, `/inbox`, `/settings`
    redirect to `/login` when signed out, and are reachable when signed in.
@@ -250,6 +302,33 @@ below for what exists today versus what's still a placeholder.
     other books — there is no code path that should be able to show any of
     these, but this is worth eyeballing directly since it's a hard privacy
     requirement.
+14. With two Supabase accounts (a contributor and a reader), on the
+    contributor's published book: as the reader, click "I needed this" and
+    press a flower, then confirm the contributor sees a notification for
+    each on `/inbox` (and that undoing either as the reader makes the
+    corresponding notification disappear, read or not). As the reader,
+    submit a margin note with ordinary text and confirm it shows as
+    "Approved" on the note itself and generates a `margin_note_approved`
+    notification for the contributor; submit another containing an email
+    address and confirm it shows as "Awaiting review" instead, with no
+    notification (expected — nothing can approve it until Phase 6). As the
+    contributor, open `/journal/passages/<id>` for that book, confirm the
+    approved note appears, toggle its visibility, and confirm a *third*
+    Supabase account only sees it on the book page when that toggle is on.
+    Turn off "Accept new margin notes" and confirm the reader's submission
+    form disappears from the book page.
+15. As a deliberate check of the same class of DB-level enforcement as
+    item 10: using the Supabase dashboard directly as the note's author,
+    try to update your own margin note's `moderation_state` straight to
+    `published`, or edit its text after it's been approved. As a
+    *different* user (not the book's owner), try to toggle
+    `is_visible_to_readers` on someone else's margin note. All three
+    should be rejected by `enforce_interaction_update_limits`.
+16. In the inbox, dismiss a notification and confirm it's gone on refresh
+    (not just hidden client-side); use "Mark all as read" and confirm the
+    button disappears once nothing is unread; toggle a notification
+    category off and confirm that action no longer creates notifications
+    for you (test from a second account acting on your content).
 
 ## Getting started
 
@@ -325,10 +404,17 @@ src/
     ui/                       # Small shared UI primitives
     today/                     # Today page's prompt card
     journal/                    # Journal entry editor
-    publishing/                  # Leave-a-passage wizard, passage status/actions
-    library/                      # Content-warning gate, bookmark/report, "read another"
+    publishing/                  # Leave-a-passage wizard, passage status/actions,
+                                   # contributor margin-note management
+    library/                      # Content-warning gate, bookmark/report, "read
+                                    # another", needed-this/flower buttons, margin
+                                    # notes section
+    inbox/                          # Notification item, category preferences,
+                                      # mark-all-read
   lib/
-    actions/                # Server Actions (auth, journal, books, library, bookmarks, reports)
+    actions/                # Server Actions (auth, journal, books, library,
+                              # bookmarks, reports, interactions, margin-notes,
+                              # notifications)
     moderation/               # ModerationProvider interface, mock provider, PII heuristic
     supabase/                # Browser/server/admin Supabase clients
     validation/                # Zod schemas shared by forms and actions
@@ -336,6 +422,7 @@ src/
     content-labels.ts            # Shared content-label metadata (value + display name)
     library.ts                    # Reader exclusions (blocked labels, reported books)
     random.ts                      # pickRandom — used by the discovery picker
+    notifications.ts                # notify() — admin-client notification creation
   middleware.ts                 # Session refresh + route protection
 supabase/
   migrations/                     # SQL migrations, applied in order
