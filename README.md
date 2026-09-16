@@ -12,10 +12,12 @@ repo). This README covers what's implemented and how to run it.
 **All 6 phases are complete — this is a feature-complete MVP**, not a
 production-ready deployment. See [Implementation status](#implementation-status)
 for what's real versus explicitly mocked, and read that section before
-treating anything here as safe to launch publicly. The single biggest gap:
-the moderation provider is a local keyword/regex heuristic, not real safety
-moderation (see `MockModerationProvider`'s doc comment) — replacing it is
-the top launch blocker, not a nice-to-have.
+treating anything here as safe to launch publicly. The top former gap — a
+real moderation provider — is now implemented (`AnthropicModerationProvider`,
+Claude-based classification; see below), but it is **opt-in, not the
+default**: set `MODERATION_PROVIDER=anthropic` and `ANTHROPIC_API_KEY` to use
+it, otherwise the app still runs on the local keyword/regex mock. A
+deployment left on the default is not using real safety moderation.
 
 ## Stack
 
@@ -289,15 +291,43 @@ the top launch blocker, not a nice-to-have.
   content the earlier phases had to defer, now unblocked — see "Seeding
   fictional content" below
 
+**Added after Phase 6: a real moderation provider.**
+`AnthropicModerationProvider` (`src/lib/moderation/anthropic-provider.ts`)
+classifies each submission with `claude-opus-5` via structured outputs
+(`jsonSchemaOutputFormat`), asking it to choose from seven categories —
+PII, active-crisis language, harassment, graphic/violent content, hate or
+discrimination, sexual content, and spam/incoherent content — with a system
+prompt that's explicit about the app's purpose: writing honestly about hard
+things (including past self-harm or grief) is normal use and must not be
+flagged as crisis language on its own; only language suggesting the writer
+may be at risk *right now* should be. It still runs the same deterministic
+`checkForPossiblePii`/`checkForCrisisLanguage` heuristics the mock provider
+uses and unions their results in — belt-and-suspenders, not a replacement,
+since regex is more reliable than an LLM for exact patterns like emails. It
+fails closed: a classifier refusal (`stop_reason === "refusal"`) or any
+API/network error is caught and routed straight to human review (new
+`ModerationReason`s `flagged_by_safety_classifier` and
+`moderation_check_failed`) rather than guessed at — and because every
+submission is still inserted as `pending_review` first and only promoted to
+`published` by a second admin-client step (see the two-step pattern above),
+the worst a moderation-provider failure can do is leave something in the
+`/admin` queue a little longer, never auto-publish or silently drop it.
+Select it with `MODERATION_PROVIDER=anthropic` and `ANTHROPIC_API_KEY` (see
+"Environment variables"); the mock remains the default so a deployment
+that forgets to set these fails obviously (everything queues for review,
+`isProductionReady` warns in the server log) rather than looking like real
+moderation when it isn't.
+
 **Explicitly mocked or deferred — this is an MVP, not a launch-ready app:**
-- **The moderation provider is still a local keyword/regex heuristic, not
-  real safety moderation** — see the doc comment on `MockModerationProvider`.
-  It cannot detect harassment, graphic content, or dangerous instructions,
-  and its crisis-language and PII checks are intentionally narrow. This is
-  the top item to replace before any real users see this app; the
-  `ModerationProvider` interface (`src/lib/moderation/types.ts`) exists so
-  that swap is a matter of a new implementation, not a rewrite of the
-  submission flow.
+- **The default moderation provider is still the local keyword/regex mock**
+  — real moderation exists (above) but is opt-in. Even with the Anthropic
+  provider enabled: there is no eval set or labeled test corpus measuring
+  its accuracy on this app's actual content, no human-in-the-loop appeal
+  path beyond the existing moderator dashboard, and every submission costs
+  one live API call with the latency and spend that implies — none of that
+  has been load- or cost-tested. Treat it as a substantial improvement over
+  the mock, not as a substitute for the legal/safety review the PRD calls
+  for before public launch.
 - Reports can be escalated but escalation has no paging/external
   notification behind it — a human still has to be checking `/admin/reports`.
   The PRD itself defers the real escalation policy to legal/safety review
@@ -453,6 +483,19 @@ the top launch blocker, not a nice-to-have.
     gone, and that the book no longer appears in `/library` for other
     accounts. This is the one action in the whole app that can't be undone
     — test it on a throwaway account, never your primary one.
+24. With `MODERATION_PROVIDER=anthropic` and a real `ANTHROPIC_API_KEY` set,
+    repeat the two moderation checks from items 8 and 14 (an ordinary
+    passage/note publishes immediately; one with an email address queues
+    for review) and confirm the outcome still matches — then submit a
+    passage that's graphic, hateful, or sexually explicit (content the
+    keyword mock would never catch) and confirm it's queued for review
+    with the correct reason(s) on `/admin/books`. Also confirm ordinary
+    writing about a hard past experience (grief, having survived something
+    difficult) still auto-publishes — over-flagging normal journal content
+    is a real failure mode here, not just under-flagging. Then unset
+    `ANTHROPIC_API_KEY` (leaving `MODERATION_PROVIDER=anthropic`) and submit
+    once more, confirming it fails closed to "Pending review" instead of
+    erroring or silently publishing.
 
 ## Getting started
 
@@ -543,7 +586,11 @@ npm run test:e2e    # Playwright (starts its own prod server unless
 See `.env.example`. `SUPABASE_SERVICE_ROLE_KEY` must never be committed and
 must never be referenced from a file that can end up in a client bundle —
 `src/lib/supabase/admin.ts` is the only place that reads it, and it is
-guarded by the `server-only` package.
+guarded by the `server-only` package. The same applies to `ANTHROPIC_API_KEY`
+— only read from `src/lib/moderation/anthropic-provider.ts`, a server-only
+module. `MODERATION_PROVIDER` defaults to `mock`; set it to `anthropic` (and
+provide `ANTHROPIC_API_KEY`) to use the real moderation provider described
+above.
 
 ## Deployment
 
@@ -556,7 +603,10 @@ configuration beyond environment variables.
    `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
    `SUPABASE_SERVICE_ROLE_KEY`, and `NEXT_PUBLIC_SITE_URL` (your production
    URL, e.g. `https://your-app.vercel.app` — used to build auth
-   redirect/callback links). Use a **separate Supabase project** for
+   redirect/callback links). Also set `MODERATION_PROVIDER=anthropic` and
+   `ANTHROPIC_API_KEY` — leaving `MODERATION_PROVIDER` unset means real user
+   content is moderated by the local keyword mock, not a production
+   deployment should ship with. Use a **separate Supabase project** for
    production versus local development; never point a Vercel deployment at
    the same project you run `npm run seed:dev` against.
 3. In the Supabase dashboard for that production project, apply every file
@@ -569,11 +619,12 @@ configuration beyond environment variables.
    back to nothing.
 5. Deploy. Then follow "Bootstrapping a moderator" above against the
    production project to promote your own account.
-6. Before treating it as live: work through the "Explicitly mocked or
-   deferred" list above, especially replacing the moderation provider —
-   none of this repo's own checks (lint/typecheck/tests/build) can verify
-   that a real safety-moderation integration is correctly wired in, since
-   there isn't one yet.
+6. Before treating it as live: confirm `MODERATION_PROVIDER=anthropic` is
+   actually set (step 2) and run manual-verification item 24 above against
+   the production project — none of this repo's own checks
+   (lint/typecheck/tests/build) call the real classifier, so they can't
+   confirm it's correctly wired in. Then work through the rest of the
+   "Explicitly mocked or deferred" list above.
 
 ## Project structure
 
@@ -610,8 +661,8 @@ src/
                               # admin-content)
     admin/                    # requireRole() — the real /admin auth boundary —
                                 # and recordAuditLog()
-    moderation/               # ModerationProvider interface, mock provider, PII
-                                # heuristic, shared crisis-language check
+    moderation/               # ModerationProvider interface, mock + Anthropic
+                                # providers, PII heuristic, shared crisis check
     supabase/                # Browser/server/admin Supabase clients
     validation/                # Zod schemas shared by forms and actions
     prompts.ts                  # Daily-featured-prompt selection logic

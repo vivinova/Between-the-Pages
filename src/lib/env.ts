@@ -12,4 +12,10 @@ export const env = {
   // Server-only. Must never be imported from a "use client" module.
   supabaseServiceRoleKey: () => requireEnv("SUPABASE_SERVICE_ROLE_KEY"),
   siteUrl: () => process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000",
+  // "mock" (default) or "anthropic". Server-only.
+  moderationProvider: () => process.env.MODERATION_PROVIDER ?? "mock",
+  // Server-only. Required only when moderationProvider() === "anthropic" —
+  // read lazily inside AnthropicModerationProvider, not at module load, so
+  // the mock provider keeps working without it set.
+  anthropicApiKey: () => requireEnv("ANTHROPIC_API_KEY"),
 };

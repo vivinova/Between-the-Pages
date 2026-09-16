@@ -1,4 +1,6 @@
+import { env } from "@/lib/env";
 import { mockModerationProvider } from "@/lib/moderation/mock-provider";
+import { anthropicModerationProvider } from "@/lib/moderation/anthropic-provider";
 import type { ModerationProvider } from "@/lib/moderation/types";
 
 export type {
@@ -11,13 +13,14 @@ export type {
 let warned = false;
 
 /**
- * The active moderation backend. Currently always the mock provider — there
- * is no real provider wired up yet. When one exists, branch on an env var
- * here (e.g. MODERATION_PROVIDER) rather than changing call sites; every
- * server action that moderates content should go through this function.
+ * The active moderation backend, chosen by the MODERATION_PROVIDER env var
+ * ("mock", the default, or "anthropic"). Every server action that moderates
+ * content should go through this function rather than importing a concrete
+ * implementation directly.
  */
 export function getModerationProvider(): ModerationProvider {
-  const provider = mockModerationProvider;
+  const provider =
+    env.moderationProvider() === "anthropic" ? anthropicModerationProvider : mockModerationProvider;
 
   if (!provider.isProductionReady && !warned) {
     warned = true;
