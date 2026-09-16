@@ -1,13 +1,26 @@
 import type { Metadata } from "next";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { ConfessForm } from "@/components/confess/confess-form";
 
 export const metadata: Metadata = { title: "Confess" };
+export const dynamic = "force-dynamic";
 
-// Real submission form (category, body, optional email) lands in Phase 2.
-export default function ConfessPage() {
+export default async function ConfessPage() {
+  const supabase = createServerSupabaseClient();
+  const { data: categories } = await supabase
+    .from("categories")
+    .select("id, slug, name")
+    .order("sort_order", { ascending: true });
+
   return (
-    <div className="text-center text-wood-600">
-      <h1 className="font-serif text-2xl text-wood-900">Leave a confession</h1>
-      <p className="mt-2">Coming soon.</p>
+    <div className="mx-auto max-w-xl">
+      <div className="mb-8 text-center">
+        <h1 className="font-serif text-2xl text-wood-900">Leave a confession</h1>
+        <p className="mt-2 text-wood-600">
+          No account, no name attached. Choose a category and say what you need to say.
+        </p>
+      </div>
+      <ConfessForm categories={categories ?? []} />
     </div>
   );
 }

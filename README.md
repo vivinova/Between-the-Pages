@@ -7,11 +7,12 @@ anonymously.
 
 ## Status
 
-**Phase 1 of 4 (Foundation) is complete.** Categories/browsing/submission
-(Phase 2), live reactions/replies (Phase 3), and the admin moderation
-dashboard (Phase 4) are not built yet — right now this is schema, moderation
-plumbing, and an app shell with two "coming soon" pages. Nothing here is
-usable end-to-end yet.
+**Phases 1-2 of 4 are complete.** You can browse categories, read a
+confession, and submit one (real moderation gate, real anonymous delete
+link). Live reactions/replies (Phase 3) and the admin moderation dashboard
+(Phase 4) are not built yet — nobody can react to or reply on a confession,
+and there is no way to review the moderation queue except directly in the
+Supabase dashboard.
 
 ### Why the pivot
 
@@ -120,15 +121,44 @@ model) without the accounts surface.
   `require-admin-session.ts`, `middleware.ts`) — the login page and the
   actual moderation queues are Phase 4.
 - New app shell (single root layout, no more authenticated-vs-public route
-  split since everything is public now), landing page, and two
-  placeholder pages (`/categories`, `/confess`) that Phase 2 replaces with
-  the real thing.
+  split since everything is public now) and landing page.
+
+**Built in Phase 2 (Core submission + browsing):**
+- `src/lib/validation/confessions.ts` + `src/lib/actions/confessions.ts`:
+  `submitConfession` runs the same two-step pattern as the previous
+  version's `submitBook` — moderation check, insert as `pending_review`
+  via the RLS-scoped client, then (only if the check didn't require human
+  review) a second update to `published` via the admin client.
+  `deleteMyConfession` re-hashes the presented token and compares against
+  `owner_token_hash` via the admin client (anon has no delete policy on
+  `confessions` at all).
+- `/confess`: category select, body textarea with a live character count,
+  a live PII warning (`checkForPossiblePii`, client-side, same heuristic
+  the server re-checks) and `CrisisResourceNotice` as you type, an
+  optional "email me about interactions" toggle. On success, shows
+  published-vs-pending-review state, the confession's own text (no
+  round-trip needed — it's already in the form), and a one-time delete
+  option; the id/token pair is saved to `localStorage`
+  (`src/lib/my-confessions.ts`) so the same browser can delete it again
+  later from the confession's own page.
+- `/categories`: grid of the 12 categories, plus a "Surprise me" link to
+  `/confessions/random` (picks randomly among the 50 most recent published
+  confessions — same `pickRandom` helper the previous version's Find Me
+  Something used).
+- `/categories/[slug]`: published confessions in that category, newest
+  first, reading only from `public_confessions` (never the base table).
+- `/confessions/[id]`: full confession text, no owner/date shown (nothing
+  to hide an owner from, but an exact timestamp could still help someone
+  correlate a confession with a real event, so it's omitted the same way
+  the previous version hid exact dates on book pages); a
+  `DeleteConfessionButton` that checks `localStorage` client-side after
+  mount and renders nothing if this browser didn't submit this confession.
 
 **Explicitly mocked or deferred — this is an in-progress rebuild, not a
 finished app:**
-- **Categories, submission, browsing, reactions, replies, and the
-  moderation dashboard don't exist yet** — Phases 2 through 4. Right now
-  `/categories` and `/confess` are literally "Coming soon" pages.
+- **Reactions, replies, and the moderation dashboard don't exist yet** —
+  Phases 3 and 4. There is currently no way to approve/reject a
+  `pending_review` confession except directly in the Supabase dashboard.
 - **The moderation provider defaults to the local keyword/regex mock**,
   same as before — set `MODERATION_PROVIDER=anthropic` and
   `ANTHROPIC_API_KEY` for real moderation. See the previous phase's README
@@ -146,6 +176,30 @@ finished app:**
   rotated by redeploying with a new value.
 - **Saved/bookmarked confessions are localStorage-only, client-side, no
   server round-trip** (per-device, not portable) — Phase 3.
+
+**What to verify manually** (this sandbox has no real Supabase project, so
+none of this has been exercised against a live database — see "Getting
+started" below):
+1. Apply the migration and seed to a real project, then confirm `/categories`
+   shows all 12 categories and `/categories/<slug>` loads for each.
+2. Submit an ordinary confession from `/confess` and confirm it shows as
+   published immediately, with a working "View it" link.
+3. Submit one containing an email address or the phrase "want to end my
+   life" and confirm it shows as awaiting review instead — then check the
+   Supabase dashboard directly and confirm the row is `pending_review` with
+   `moderation_reasons` populated, not `published`.
+4. Delete a confession you just submitted, in the same browser, both from
+   the success panel and from the confession's own page. Confirm the row is
+   gone in the Supabase dashboard. Then open the confession's URL in a
+   private/incognito window and confirm there's no delete button (no
+   `localStorage` entry there).
+5. Try `GET /rest/v1/confessions?select=contact_email` directly against
+   your project's REST API with the anon key (after opting into an email on
+   a test submission) and confirm it's rejected — this is the
+   `revoke select` from the migration actually taking effect, not just
+   present in the SQL file.
+6. Click "Surprise me" a few times and confirm it lands on different
+   published confessions (and doesn't error when there are very few).
 
 ## Getting started
 
@@ -205,32 +259,39 @@ and `src/lib/admin/session.ts` are the only places that read them,
 ```
 src/
   app/
-    page.tsx                 # Landing page
-    categories/               # Browse by category — placeholder, Phase 2
-    confess/                  # Submission form — placeholder, Phase 2
-    support/                  # Crisis resource page
-    admin/                     # Moderator dashboard — Phase 4
-    layout.tsx                # Root layout: nav, footer disclaimer, skip-link
+    page.tsx                    # Landing page
+    categories/                  # Category grid
+    categories/[slug]/            # Published confessions in one category
+    confess/                     # Submission form (real)
+    confessions/[id]/              # Confession detail + delete-your-own
+    confessions/random/            # "Surprise me" redirect
+    support/                     # Crisis resource page
+    admin/                        # Moderator dashboard — Phase 4
+    layout.tsx                   # Root layout: nav, footer disclaimer, skip-link
   components/
-    support/                  # CrisisResourceNotice
-    ui/                        # Button, LinkButton, Field
+    confess/                     # ConfessForm, DeleteConfessionButton
+    support/                     # CrisisResourceNotice
+    ui/                           # Button, LinkButton, Field
   lib/
+    actions/confessions.ts        # submitConfession, deleteMyConfession
+    validation/confessions.ts      # Zod schemas
     admin/
-      session.ts               # Stateless HMAC session token (Edge + Node safe)
-      require-admin-session.ts # The real /admin auth boundary (server actions)
-      audit-log.ts              # recordAuditLog() — service-role only
-    moderation/                # ModerationProvider interface, mock + Anthropic
-                                # providers, PII heuristic, shared crisis check
-    supabase/                # Anon-key server client + service-role admin client
-    env.ts                    # Typed, fail-fast environment variable access
-    fingerprint.ts             # Anonymous cookie id + IP → SHA-256 hash
-    rate-limit.ts               # Sliding-window limiter, admin-client-only
+      session.ts                  # Stateless HMAC session token (Edge + Node safe)
+      require-admin-session.ts    # The real /admin auth boundary (server actions)
+      audit-log.ts                 # recordAuditLog() — service-role only
+    moderation/                   # ModerationProvider interface, mock + Anthropic
+                                   # providers, PII heuristic, shared crisis check
+    supabase/                   # Anon-key server client + service-role admin client
+    env.ts                       # Typed, fail-fast environment variable access
+    fingerprint.ts                # Anonymous cookie id + IP → SHA-256 hash
+    my-confessions.ts             # localStorage record of confessions this browser submitted
+    rate-limit.ts                  # Sliding-window limiter, admin-client-only
 supabase/
   migrations/0001_confessions.sql
-  seed.sql                    # The 12 confession categories
+  seed.sql                       # The 12 confession categories
 tests/
-  unit/                       # Vitest — moderation, PII/crisis heuristics,
-                                # admin session tokens
-  e2e/                        # Playwright — accessibility scan of every
-                                # page reachable without the admin passphrase
+  unit/                          # Vitest — moderation, PII/crisis heuristics,
+                                  # admin session tokens, confession validation
+  e2e/                           # Playwright — accessibility scan + navigation,
+                                  # every page reachable without the admin passphrase
 ```
