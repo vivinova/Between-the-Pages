@@ -21,6 +21,17 @@ export type BookModerationState =
   | "removed"
   | "archived";
 
+export type ReportReason =
+  | "harassment"
+  | "hate_speech"
+  | "dangerous_advice"
+  | "graphic_content"
+  | "personal_information"
+  | "spam"
+  | "incorrect_labels"
+  | "immediate_safety_concern"
+  | "other";
+
 export interface Database {
   public: {
     Tables: {
@@ -136,6 +147,7 @@ export interface Database {
           notes_visible_to_readers: boolean;
           moderation_state: BookModerationState;
           moderation_reasons: string[];
+          view_count: number;
           created_at: string;
           updated_at: string;
           published_at: string | null;
@@ -167,6 +179,41 @@ export interface Database {
         }>;
         Relationships: [];
       };
+      bookmarks: {
+        Row: {
+          reader_id: string;
+          book_id: string;
+          created_at: string;
+        };
+        Insert: {
+          reader_id: string;
+          book_id: string;
+        };
+        Update: Partial<{
+          reader_id: string;
+          book_id: string;
+        }>;
+        Relationships: [];
+      };
+      reports: {
+        Row: {
+          id: string;
+          reporter_id: string;
+          book_id: string;
+          reason: ReportReason;
+          review_state: "open" | "reviewing" | "resolved" | "dismissed";
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          reporter_id: string;
+          book_id: string;
+          reason: ReportReason;
+          review_state?: "open" | "reviewing" | "resolved" | "dismissed";
+        };
+        Update: never;
+        Relationships: [];
+      };
       audit_log: {
         Row: {
           id: string;
@@ -190,6 +237,11 @@ export interface Database {
       };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      increment_book_view_count: {
+        Args: { target_book_id: string };
+        Returns: undefined;
+      };
+    };
   };
 }
