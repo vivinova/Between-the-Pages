@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { signOut } from "@/lib/actions/auth";
 import { Button } from "@/components/ui/button";
+import { LinkButton } from "@/components/ui/link-button";
 
 const PUBLIC_NAV_ITEMS = [{ href: "/library", label: "Library" }];
 
@@ -20,10 +21,20 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     data: { user },
   } = await supabase.auth.getUser();
 
+  const { data: profile } = user
+    ? await supabase.from("profiles").select("reduced_motion").eq("id", user.id).maybeSingle()
+    : { data: null };
+
   const navItems = user ? AUTHENTICATED_NAV_ITEMS : PUBLIC_NAV_ITEMS;
 
   return (
-    <div className="min-h-screen bg-cream-100">
+    <div
+      className="min-h-screen bg-cream-100"
+      data-reduced-motion={profile?.reduced_motion ? "true" : undefined}
+    >
+      <a href="#main-content" className="skip-link">
+        Skip to content
+      </a>
       <header className="border-b border-wood-400/30 bg-cream-50">
         <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-4 px-4 py-4">
           <Link href={user ? "/today" : "/"} className="font-serif text-lg text-wood-900">
@@ -51,14 +62,22 @@ export default async function AppLayout({ children }: { children: React.ReactNod
                 </form>
               </>
             ) : (
-              <Link href="/login">
-                <Button variant="ghost">Sign in</Button>
-              </Link>
+              <LinkButton href="/login" variant="ghost">
+                Sign in
+              </LinkButton>
             )}
           </div>
         </div>
       </header>
-      <main className="mx-auto max-w-5xl px-4 py-10">{children}</main>
+      <main id="main-content" className="mx-auto max-w-5xl px-4 py-10">
+        {children}
+      </main>
+      <footer className="border-t border-wood-400/20 px-4 py-6 text-center text-xs text-wood-500">
+        Between the Pages is a peer reflection space, not therapy or emergency support.{" "}
+        <Link href="/support" className="underline">
+          Support resources
+        </Link>
+      </footer>
     </div>
   );
 }

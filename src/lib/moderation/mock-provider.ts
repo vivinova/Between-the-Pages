@@ -1,4 +1,5 @@
 import { checkForPossiblePii } from "@/lib/moderation/pii";
+import { checkForCrisisLanguage } from "@/lib/moderation/crisis";
 import type {
   ModerationCheckResult,
   ModerationContext,
@@ -21,30 +22,13 @@ class MockModerationProvider implements ModerationProvider {
   readonly name = "mock";
   readonly isProductionReady = false;
 
-  // Deliberately short and unambiguous — this is a routing heuristic (send
-  // to human review), not a clinical risk assessment. It is not exhaustive
-  // and misses non-English text, misspellings, and indirect phrasing by
-  // design; false negatives here are expected to be caught by the human
-  // review queue for anything that reads as high-risk on manual read.
-  private readonly crisisPhrases = [
-    "kill myself",
-    "end my life",
-    "want to die",
-    "suicidal",
-    "suicide",
-    "hurt myself",
-    "self harm",
-    "self-harm",
-  ];
-
   async checkContent(
     text: string,
     _context: ModerationContext,
   ): Promise<ModerationCheckResult> {
     const reasons: ModerationReason[] = [];
-    const lower = text.toLowerCase();
 
-    if (this.crisisPhrases.some((phrase) => lower.includes(phrase))) {
+    if (checkForCrisisLanguage(text)) {
       reasons.push("possible_crisis_language");
     }
 

@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { LinkButton } from "@/components/ui/link-button";
 import type { Prompt } from "@/lib/prompts";
 
 interface PromptCardProps {
@@ -23,9 +23,9 @@ export function PromptCard({ prompts, featuredPromptId }: PromptCardProps) {
         <p className="text-wood-700">
           There&apos;s no prompt today, but the page is still yours.
         </p>
-        <Link href="/journal/new" className="mt-4 inline-block">
-          <Button variant="primary">Write freely</Button>
-        </Link>
+        <LinkButton href="/journal/new" variant="primary" className="mt-4">
+          Write freely
+        </LinkButton>
       </div>
     );
   }
@@ -48,12 +48,12 @@ export function PromptCard({ prompts, featuredPromptId }: PromptCardProps) {
       </p>
       <p className="mt-2 font-serif text-xl text-wood-900">{current.prompt_text}</p>
       <div className="mt-5 flex flex-wrap gap-3">
-        <Link href={`/journal/new?promptId=${current.id}`}>
-          <Button variant="primary">Write about this</Button>
-        </Link>
-        <Link href="/journal/new">
-          <Button variant="secondary">Write freely</Button>
-        </Link>
+        <LinkButton href={`/journal/new?promptId=${current.id}`} variant="primary">
+          Write about this
+        </LinkButton>
+        <LinkButton href="/journal/new" variant="secondary">
+          Write freely
+        </LinkButton>
         {prompts.length > 1 ? (
           <Button type="button" variant="ghost" onClick={tryAnother}>
             Try another prompt

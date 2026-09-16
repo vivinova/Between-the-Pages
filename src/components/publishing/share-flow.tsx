@@ -3,8 +3,11 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { LinkButton } from "@/components/ui/link-button";
 import { CONTENT_LABELS } from "@/lib/content-labels";
 import { checkForPossiblePii } from "@/lib/moderation/pii";
+import { checkForCrisisLanguage } from "@/lib/moderation/crisis";
+import { CrisisResourceNotice } from "@/components/support/crisis-resource-notice";
 import { submitBook, type SubmitBookResult } from "@/lib/actions/books";
 import type { ContentLabel } from "@/lib/supabase/types";
 
@@ -18,17 +21,26 @@ interface Shelf {
 interface ShareFlowProps {
   entryId: string;
   shelves: Shelf[];
+  defaultAllowMarginNotes?: boolean;
+  defaultNotesVisibleToReaders?: boolean;
 }
 
-export function ShareFlow({ entryId, shelves }: ShareFlowProps) {
+export function ShareFlow({
+  entryId,
+  shelves,
+  defaultAllowMarginNotes = true,
+  defaultNotesVisibleToReaders = false,
+}: ShareFlowProps) {
   const [step, setStep] = useState<Step>("compose");
   const [excerptText, setExcerptText] = useState("");
   const [privacyConfirmed, setPrivacyConfirmed] = useState(false);
   const [piiAcknowledged, setPiiAcknowledged] = useState(false);
   const [shelfId, setShelfId] = useState<string>(shelves[0]?.id ?? "");
   const [labels, setLabels] = useState<ContentLabel[]>([]);
-  const [allowMarginNotes, setAllowMarginNotes] = useState(true);
-  const [notesVisibleToReaders, setNotesVisibleToReaders] = useState(false);
+  const [allowMarginNotes, setAllowMarginNotes] = useState(defaultAllowMarginNotes);
+  const [notesVisibleToReaders, setNotesVisibleToReaders] = useState(
+    defaultAllowMarginNotes && defaultNotesVisibleToReaders,
+  );
   const [anonymousConfirmed, setAnonymousConfirmed] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [result, setResult] = useState<SubmitBookResult | null>(null);
@@ -44,6 +56,7 @@ export function ShareFlow({ entryId, shelves }: ShareFlowProps) {
   }, [entryId]);
 
   const piiCheck = useMemo(() => checkForPossiblePii(excerptText), [excerptText]);
+  const hasCrisisLanguage = useMemo(() => checkForCrisisLanguage(excerptText), [excerptText]);
 
   const toggleLabel = (label: ContentLabel) => {
     setLabels((current) =>
@@ -85,12 +98,12 @@ export function ShareFlow({ entryId, shelves }: ShareFlowProps) {
             : "It's awaiting review before it becomes visible. Publication isn't always immediate — you'll be able to check its status any time."}
         </p>
         <div className="flex flex-wrap gap-3">
-          <Link href="/journal/passages">
-            <Button variant="primary">View your passages</Button>
-          </Link>
-          <Link href="/journal">
-            <Button variant="secondary">Back to journal</Button>
-          </Link>
+          <LinkButton href="/journal/passages" variant="primary">
+            View your passages
+          </LinkButton>
+          <LinkButton href="/journal" variant="secondary">
+            Back to journal
+          </LinkButton>
         </div>
       </div>
     );
@@ -162,6 +175,8 @@ export function ShareFlow({ entryId, shelves }: ShareFlowProps) {
               </label>
             </div>
           ) : null}
+
+          {hasCrisisLanguage ? <CrisisResourceNotice /> : null}
 
           <label className="flex items-start gap-2 text-sm text-wood-700">
             <input

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { reportBookSchema, reportInteractionSchema } from "@/lib/validation/library";
+import { checkRateLimit, RATE_LIMITS, RATE_LIMIT_MESSAGE } from "@/lib/rate-limit";
 
 export type ActionResult = { error: string } | { error?: undefined };
 
@@ -20,6 +21,10 @@ export async function reportBook(input: unknown): Promise<ActionResult> {
   } = await supabase.auth.getUser();
   if (!user) {
     return { error: "Sign in to report a book." };
+  }
+
+  if (!(await checkRateLimit(supabase, user.id, RATE_LIMITS.report))) {
+    return { error: RATE_LIMIT_MESSAGE };
   }
 
   const { error } = await supabase.from("reports").insert({
@@ -50,6 +55,10 @@ export async function reportInteraction(input: unknown): Promise<ActionResult> {
   } = await supabase.auth.getUser();
   if (!user) {
     return { error: "Sign in to report a margin note." };
+  }
+
+  if (!(await checkRateLimit(supabase, user.id, RATE_LIMITS.report))) {
+    return { error: RATE_LIMIT_MESSAGE };
   }
 
   const { error } = await supabase.from("reports").insert({

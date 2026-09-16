@@ -9,8 +9,13 @@ repo). This README covers what's implemented and how to run it.
 
 ## Status
 
-**Phase 5 of 6 (Community interactions) is complete.** See [Implementation status](#implementation-status)
-below for what exists today versus what's still a placeholder.
+**All 6 phases are complete — this is a feature-complete MVP**, not a
+production-ready deployment. See [Implementation status](#implementation-status)
+for what's real versus explicitly mocked, and read that section before
+treating anything here as safe to launch publicly. The single biggest gap:
+the moderation provider is a local keyword/regex heuristic, not real safety
+moderation (see `MockModerationProvider`'s doc comment) — replacing it is
+the top launch blocker, not a nice-to-have.
 
 ## Stack
 
@@ -21,9 +26,15 @@ below for what exists today versus what's still a placeholder.
   authorization boundary for user data
 - **React Hook Form + Zod** for all form validation (client and re-validated
   server-side)
-- **Framer Motion** for restrained animation (not yet used — introduced when
-  the journal editor and book reader are built)
-- **Vitest** for unit tests, **Playwright** for critical end-to-end flows
+- Restrained motion via plain CSS transitions, not a JS animation library —
+  there wasn't enough motion in this MVP (a few hover/reveal transitions) to
+  justify Framer Motion's bundle weight, so it was removed as a dependency.
+  Reduced motion is respected two ways: the OS-level `prefers-reduced-motion`
+  media query, and a per-account override (`profiles.reduced_motion`, set in
+  Settings) applied as `data-reduced-motion="true"` on the authenticated app
+  shell — see `globals.css`.
+- **Vitest** for unit tests, **Playwright** (+ `@axe-core/playwright` for
+  automated accessibility scans) for critical end-to-end flows
 
 ## Architecture notes
 
@@ -106,6 +117,39 @@ below for what exists today versus what's still a placeholder.
   pre-rewrite `@supabase/supabase-js` type surface breaks the same way,
   silently. Once the Supabase CLI is available, prefer generating this file
   (`supabase gen types typescript --local`) over hand-editing it.
+- **The moderator dashboard (`/admin`) is authorized twice, and the two
+  checks do different jobs.** `src/app/admin/layout.tsx` redirects a
+  non-moderator away — that's a UI convenience, not security, since a
+  Server Action is just a POST endpoint any signed-in browser could call
+  directly regardless of which page rendered the button. The real boundary
+  is `requireRole()` (`src/lib/admin/require-role.ts`), which every action
+  in `src/lib/actions/moderation.ts` and `admin-content.ts` calls first,
+  checking the caller's own `profiles.role` before touching anything with
+  the admin client. There's a second, related trap specific to reads: even
+  a moderator's own authenticated session can't see `pending_review`
+  content, because RLS on `books`/`interactions` grants read access by
+  ownership or published state, not by role — so every `/admin/*` page
+  reads through the admin client too (see the comment atop
+  `src/app/admin/page.tsx`), relying on the layout's redirect for
+  authorization rather than RLS for that page. There is no self-service way
+  to become a moderator — see "Bootstrapping a moderator" below.
+- **Rate limiting is a plain sliding-window counter, not Vercel/Supabase
+  infrastructure.** `checkRateLimit()` (`src/lib/rate-limit.ts`) prunes
+  expired rows in `rate_limit_events` for that actor+action, counts what's
+  left, and records the attempt if under the limit — self-cleaning, no
+  background job needed. Applied to publishing, margin notes, and
+  reporting; not to toggles like bookmarks/needed-this/flowers, which are
+  already capped at one per reader per book by a unique constraint.
+- **`LinkButton`, not `<Link><Button></Button></Link>`.** Every "link
+  styled as a button" in this codebase renders a single `<a>`
+  (`src/components/ui/link-button.tsx`), sharing `Button`'s classes. Wrapping
+  a `<button>` inside a `<Link>` is invalid HTML (nested interactive
+  content) and a real accessibility failure — it's what an automated axe
+  scan caught on the landing page during the Phase 6 accessibility pass,
+  and the same pattern turned out to be used in eight other places across
+  the app. If you need a link that looks like a button, use `LinkButton`;
+  if `Button`'s `onClick` needs to navigate imperatively after some async
+  work, use `Button` plus `useRouter().push()`, not a `Link` wrapper.
 
 ## Implementation status
 
@@ -200,44 +244,87 @@ below for what exists today versus what's still a placeholder.
   stop accepting new notes, change the visibility default, review approved
   notes with per-note visibility and report-as-abusive
 
-**Explicitly mocked or deferred — do not treat as production-ready:**
-- There is no moderator dashboard yet. A book or margin note that lands in
-  `pending_review` has no path to `published` until the Phase 6 dashboard
-  exists — that's expected, not a bug, for anything the mock moderation
-  provider flags.
-- The moderation provider is a keyword/regex heuristic, not real safety
-  moderation — see the doc comment on `MockModerationProvider`. It cannot
-  detect harassment, graphic content, or dangerous instructions, and its
-  crisis-language and PII checks are intentionally narrow. It's applied
-  identically to book excerpts and margin notes.
-- Reports (on books or margin notes) are filed and immediately hide the
-  target from the reporter, but there is no moderator queue yet to
-  actually review, resolve, or escalate them — `review_state` just sits at
-  `open`.
-- `margin_note_rejected` is modeled in the `notification_type` enum but
-  nothing creates one yet, since rejection itself doesn't exist until
-  Phase 6 — whoever builds that dashboard needs to call `notify()` on
-  reject, the same way `submitMarginNote` does on auto-approve.
-- No rate limiting yet (Phase 6) — publishing, interacting, and reporting
-  all have no submission throttle.
-- `/settings` is still a placeholder. `profiles.blocked_labels` and
-  `profiles.notification_settings` are both already respected everywhere
-  they're read (library queries and `notify()`, respectively) — Phase 5
-  added the inbox's own minimal notification-category toggles directly, so
-  that part no longer waits on Phase 6, but blocked-topic management still
-  does.
-- No fictional sample books are seeded. Seeding a book requires a real
-  `auth.users` row (the FK chain is `books.owner_id → profiles.id →
-  auth.users.id`), which a plain SQL seed file can't create — that needs
-  the Supabase Admin API. The library will be empty until at least one book
-  is published through Phase 3's own flow, or until a dedicated
-  service-role seed script is written.
+**Built in Phase 6 (Safety & launch hardening):**
+- Migration: `rate_limit_events` + RLS, `reports.review_state` gains
+  `escalated`, and three new `profiles` columns Settings now exposes
+  (`reduced_motion`, `default_allow_margin_notes`,
+  `default_notes_visible_to_readers`)
+- Rate limiting (`src/lib/rate-limit.ts`) wired into `submitBook`,
+  `submitMarginNote`, `reportBook`, and `reportInteraction` — see the
+  architecture note above for the mechanism and limits
+- Crisis resource surfacing: a shared `checkForCrisisLanguage()`
+  (`src/lib/moderation/crisis.ts`) — the same keyword list
+  `MockModerationProvider` already used, now factored out so the client can
+  show it too — drives a live, non-blocking `CrisisResourceNotice` on the
+  publish preview and margin-note form, plus a persistent footer
+  disclaimer and a standalone `/support` page
+- Moderator dashboard (`/admin`): pending-books and pending-margin-notes
+  queues (approve/reject with reason, inline relabeling), a reports queue
+  (resolve/dismiss/escalate, plus a one-click "remove the reported
+  content" shortcut), shelf and prompt management, and an audit-log
+  history view. Every decision is recorded via `recordAuditLog()`
+  (`src/lib/admin/audit-log.ts`) — actor, action, target, and reason.
+  Rejecting a margin note now actually sends the `margin_note_rejected`
+  notification Phase 5 only modeled the schema for.
+- Settings (`/settings`, replacing the Phase 1 stub): blocked content
+  labels, notification-category preferences (same toggles as the inbox,
+  writing to the same `profiles.notification_settings`), margin-note
+  defaults (pre-fills the leave-a-passage wizard's classification step),
+  reduced-motion override, password change (reusing the existing
+  `UpdatePasswordForm`), a data-export download, and account deletion
+- `GET /api/export`: downloads the signed-in user's journal entries, their
+  own books, bookmarks, and interactions as one JSON file
+- Account deletion (`src/lib/actions/account.ts`): deletes the
+  `auth.users` row via the admin client's `auth.admin.deleteUser` — every
+  other table cascades from `profiles` via existing `ON DELETE CASCADE`
+  foreign keys (`audit_log.actor_id` is `ON DELETE SET NULL` instead,
+  preserving moderation history without keeping a live reference to the
+  deleted account)
+- Accessibility: a skip-to-content link, `prefers-reduced-motion` +
+  per-account override CSS, and the `LinkButton` fix described above,
+  caught and verified by an automated axe-core scan
+  (`tests/e2e/accessibility.spec.ts`) covering every page reachable
+  without a Supabase session in this sandbox
+- `scripts/seed-dev-content.ts` (`npm run seed:dev`): the fictional sample
+  content the earlier phases had to defer, now unblocked — see "Seeding
+  fictional content" below
+
+**Explicitly mocked or deferred — this is an MVP, not a launch-ready app:**
+- **The moderation provider is still a local keyword/regex heuristic, not
+  real safety moderation** — see the doc comment on `MockModerationProvider`.
+  It cannot detect harassment, graphic content, or dangerous instructions,
+  and its crisis-language and PII checks are intentionally narrow. This is
+  the top item to replace before any real users see this app; the
+  `ModerationProvider` interface (`src/lib/moderation/types.ts`) exists so
+  that swap is a matter of a new implementation, not a rewrite of the
+  submission flow.
+- Reports can be escalated but escalation has no paging/external
+  notification behind it — a human still has to be checking `/admin/reports`.
+  The PRD itself defers the real escalation policy to legal/safety review
+  before public launch; this MVP doesn't attempt to guess at one.
+- Rate limits (5 publishes/hour, 20 notes/hour, 10 reports/hour) are
+  conservative defaults, not researched thresholds — revisit once there's
+  real usage data.
+- No admin UI to promote a user to moderator/admin — see "Bootstrapping a
+  moderator" below.
 - Session-interruption recovery relies entirely on the ~1.5s autosave to
   the database — there is no separate localStorage draft layer, so content
   typed in the last second or two before a hard crash is not recovered.
   This applies to journal entries; the passage-composition step in the
   leave-a-passage flow isn't persisted at all until final submission
   (by design — canceling must never affect the private entry).
+- Deletion/backup retention policy is a placeholder (soft-delete-style
+  behavior isn't even implemented for most content — most deletes are
+  immediate hard deletes today), pending the legal/retention review the
+  PRD explicitly calls for before beta.
+- Region-specific crisis resources: only US resources (988, Crisis Text
+  Line) are shown, matching the PRD's "begin in one language and limited
+  regions where crisis resources are verified."
+- No automated integration/RLS tests run against a live Postgres — this
+  sandbox has no real Supabase project. Everything DB-level (RLS policies,
+  the two moderation-state triggers, the view-count RPC) has been reasoned
+  through carefully and is called out with a specific manual check below,
+  but "reasoned through" is not the same as "tested."
 
 **What to verify manually:**
 1. Create a real Supabase project and fill in `.env.local` from
@@ -248,7 +335,7 @@ below for what exists today versus what's still a placeholder.
    placeholder credentials, so they don't cover successful auth).
 2. Apply the migrations in `supabase/migrations/` and `supabase/seed.sql`
    to that project (see below) and confirm in the Supabase dashboard that
-   RLS is enabled on all ten tables and that a new `profiles` row appears
+   RLS is enabled on all eleven tables and that a new `profiles` row appears
    automatically when a user signs up.
 3. Confirm `/today`, `/journal`, `/bookmarks`, `/inbox`, `/settings`
    redirect to `/login` when signed out, and are reachable when signed in.
@@ -311,7 +398,8 @@ below for what exists today versus what's still a placeholder.
     "Approved" on the note itself and generates a `margin_note_approved`
     notification for the contributor; submit another containing an email
     address and confirm it shows as "Awaiting review" instead, with no
-    notification (expected — nothing can approve it until Phase 6). As the
+    notification yet — it now sits in the moderator queue (item 18 covers
+    approving it from there). As the
     contributor, open `/journal/passages/<id>` for that book, confirm the
     approved note appears, toggle its visibility, and confirm a *third*
     Supabase account only sees it on the book page when that toggle is on.
@@ -329,6 +417,42 @@ below for what exists today versus what's still a placeholder.
     button disappears once nothing is unread; toggle a notification
     category off and confirm that action no longer creates notifications
     for you (test from a second account acting on your content).
+17. Promote an account to moderator (see "Bootstrapping a moderator"
+    below), confirm `/admin` is reachable for that account and redirects
+    to `/today` for an ordinary account, and that `/admin` itself redirects
+    to `/login` when signed out.
+18. On `/admin/books`, approve a pending book and confirm it appears in the
+    library; reject another and confirm it's gone from `/admin/books` but
+    never appeared publicly. Edit a pending book's labels before approving
+    and confirm the change sticks. Do the same on `/admin/notes` for a
+    pending margin note, and confirm rejecting it creates a
+    `margin_note_rejected` notification for the note's *author* (not the
+    book's contributor).
+19. File a report as one account, then as the moderator account open
+    `/admin/reports`, confirm it's listed with the right content preview,
+    and try Resolve, Dismiss, and Escalate. Use "Remove content" on a
+    reported book and confirm it disappears from the library immediately.
+20. On `/admin/shelves`, add a shelf and confirm it appears in the library
+    grid; hide one and confirm it stops appearing there (existing books on
+    it should still be reachable directly, just not listed). On
+    `/admin/prompts`, add a prompt and activate/archive one, and confirm
+    Today's rotation reflects it.
+21. Open `/admin/history` and confirm every action taken in items 18-20
+    shows up with the correct actor, action, target, and (where given) reason.
+22. On `/settings`, block a content label and confirm a book with that
+    label stops appearing anywhere in `/library`; change your password and
+    confirm you can sign in with the new one; set margin-note defaults and
+    confirm a new leave-a-passage submission pre-fills them; toggle reduced
+    motion and confirm `data-reduced-motion="true"` appears on the app
+    shell in devtools. Download your data export and confirm it's valid
+    JSON containing your journal entries.
+23. As a genuinely last, deliberate step: create a throwaway account,
+    write an entry, publish a passage, then delete the account from
+    Settings. Confirm in the Supabase dashboard that the `auth.users` row,
+    `profiles` row, the journal entry, and the published book are all
+    gone, and that the book no longer appears in `/library` for other
+    accounts. This is the one action in the whole app that can't be undone
+    — test it on a throwaway account, never your primary one.
 
 ## Getting started
 
@@ -361,9 +485,41 @@ Without the CLI, paste the contents of each file in
 `supabase/migrations/` (in order) into the Supabase dashboard's SQL editor,
 then run `supabase/seed.sql` the same way to load the 24 seed journal
 prompts and the 8 launch shelves. This seed data is real product content
-(not fictional placeholders), so it's safe to run in any environment. A
-later phase will add clearly-marked fictional sample books here, gated so
-they never reach production.
+(not fictional placeholders), so it's safe to run in any environment.
+
+### Bootstrapping a moderator
+
+There is no self-service way to become a moderator (correctly — that would
+be a privilege-escalation hole). After signing up normally, promote your
+own account once via the Supabase dashboard's SQL editor:
+
+```sql
+update public.profiles set role = 'admin' where id = '<your-auth-user-id>';
+```
+
+Find your user id under Authentication → Users in the dashboard, or via
+`select id from auth.users where email = '<your-email>';`. Use `'admin'` for
+full access (including shelf/prompt management); `'moderator'` can do
+everything under `/admin` except manage shelves and prompts.
+
+### Seeding fictional content
+
+The library is empty until something is published. Either publish a book
+through the app's own flow (a good end-to-end check of Phase 3), or run:
+
+```bash
+npm run seed:dev
+```
+
+This creates two fictional accounts (`seed-contributor@example.com`,
+`seed-reader@example.com`) and a handful of published books plus one
+approved margin note under them, using the Supabase Admin API — the only
+way to satisfy the `books.owner_id → profiles.id → auth.users.id` foreign
+key chain outside the normal sign-up flow. It asks for interactive
+confirmation naming the target project before writing anything.
+**Never run this against a production project** — see the script's own
+doc comment (`scripts/seed-dev-content.ts`) for why, and how the content it
+creates stays identifiable as fictional.
 
 ### Run locally
 
@@ -389,19 +545,51 @@ must never be referenced from a file that can end up in a client bundle —
 `src/lib/supabase/admin.ts` is the only place that reads it, and it is
 guarded by the `server-only` package.
 
+## Deployment
+
+This is a stock Next.js 14 App Router project — Vercel needs no special
+configuration beyond environment variables.
+
+1. Push this repo to GitHub (or GitLab/Bitbucket) and import it in Vercel,
+   or run `vercel` from the project root.
+2. In the Vercel project's Settings → Environment Variables, set
+   `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
+   `SUPABASE_SERVICE_ROLE_KEY`, and `NEXT_PUBLIC_SITE_URL` (your production
+   URL, e.g. `https://your-app.vercel.app` — used to build auth
+   redirect/callback links). Use a **separate Supabase project** for
+   production versus local development; never point a Vercel deployment at
+   the same project you run `npm run seed:dev` against.
+3. In the Supabase dashboard for that production project, apply every file
+   in `supabase/migrations/` in order, then `supabase/seed.sql` (real
+   product content, safe for production — see above). Do **not** run
+   `npm run seed:dev` against it.
+4. Under Supabase Authentication → URL Configuration, add your production
+   URL's `/auth/callback` (e.g. `https://your-app.vercel.app/auth/callback`)
+   to the redirect allow-list, or sign-up/password-reset emails will link
+   back to nothing.
+5. Deploy. Then follow "Bootstrapping a moderator" above against the
+   production project to promote your own account.
+6. Before treating it as live: work through the "Explicitly mocked or
+   deferred" list above, especially replacing the moderation provider —
+   none of this repo's own checks (lint/typecheck/tests/build) can verify
+   that a real safety-moderation integration is correctly wired in, since
+   there isn't one yet.
+
 ## Project structure
 
 ```
 src/
   app/
-    (public)/        # Landing page — no auth required
+    (public)/        # Landing page, /support — no auth required
     (auth)/           # Sign up, sign in, password reset
     (app)/             # Authenticated app shell + Today/Journal/Library/
                          # Bookmarks/Inbox/Settings
-    auth/callback/       # Supabase auth code exchange
-    not-found.tsx          # Themed 404 (also covers non-owner entry ids)
+    admin/               # Moderator dashboard — separate layout/nav, role-gated
+    api/export/            # Account data export (route handler, not a Server Action)
+    auth/callback/           # Supabase auth code exchange
+    not-found.tsx              # Themed 404 (also covers non-owner entry ids)
   components/
-    ui/                       # Small shared UI primitives
+    ui/                       # Small shared UI primitives (Button, LinkButton, Field)
     today/                     # Today page's prompt card
     journal/                    # Journal entry editor
     publishing/                  # Leave-a-passage wizard, passage status/actions,
@@ -411,11 +599,19 @@ src/
                                     # notes section
     inbox/                          # Notification item, category preferences,
                                       # mark-all-read
+    settings/                         # Blocked labels, reduced motion, margin-note
+                                        # defaults, delete-account confirmation
+    admin/                              # Moderation queue items, shelf/prompt rows
+    support/                             # Crisis resource notice
   lib/
     actions/                # Server Actions (auth, journal, books, library,
                               # bookmarks, reports, interactions, margin-notes,
-                              # notifications)
-    moderation/               # ModerationProvider interface, mock provider, PII heuristic
+                              # notifications, settings, account, moderation,
+                              # admin-content)
+    admin/                    # requireRole() — the real /admin auth boundary —
+                                # and recordAuditLog()
+    moderation/               # ModerationProvider interface, mock provider, PII
+                                # heuristic, shared crisis-language check
     supabase/                # Browser/server/admin Supabase clients
     validation/                # Zod schemas shared by forms and actions
     prompts.ts                  # Daily-featured-prompt selection logic
@@ -423,11 +619,14 @@ src/
     library.ts                    # Reader exclusions (blocked labels, reported books)
     random.ts                      # pickRandom — used by the discovery picker
     notifications.ts                # notify() — admin-client notification creation
+    rate-limit.ts                    # checkRateLimit() sliding-window limiter
   middleware.ts                 # Session refresh + route protection
+scripts/
+  seed-dev-content.ts             # npm run seed:dev — fictional library content
 supabase/
   migrations/                     # SQL migrations, applied in order
-  seed.sql                         # Local/dev seed data (prompts + shelves so far)
+  seed.sql                         # Local/dev seed data (prompts + shelves)
 tests/
   unit/                               # Vitest
-  e2e/                                 # Playwright
+  e2e/                                 # Playwright, including axe-core scans
 ```

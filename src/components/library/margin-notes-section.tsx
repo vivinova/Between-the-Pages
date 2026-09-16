@@ -10,6 +10,8 @@ import {
 } from "@/lib/actions/margin-notes";
 import { reportInteraction } from "@/lib/actions/reports";
 import { Button } from "@/components/ui/button";
+import { checkForCrisisLanguage } from "@/lib/moderation/crisis";
+import { CrisisResourceNotice } from "@/components/support/crisis-resource-notice";
 import type { InteractionModerationState, ReportReason } from "@/lib/supabase/types";
 
 const SUGGESTED_PROMPTS = [
@@ -258,6 +260,7 @@ function MarginNoteForm({ bookId, onSubmitted }: { bookId: string; onSubmitted: 
         className="rounded-md border border-wood-400/30 bg-cream-50 p-2 text-wood-900"
       />
       <span className="text-xs text-wood-500">{text.length} / 240</span>
+      {checkForCrisisLanguage(text) ? <CrisisResourceNotice /> : null}
       {error ? (
         <p role="alert" className="text-sm text-burgundy-600">
           {error}

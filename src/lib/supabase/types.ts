@@ -46,6 +46,8 @@ export type NotificationType =
   | "margin_note_approved"
   | "margin_note_rejected";
 
+export type ReportReviewState = "open" | "reviewing" | "resolved" | "dismissed" | "escalated";
+
 export interface Database {
   public: {
     Tables: {
@@ -56,6 +58,9 @@ export interface Database {
           age_confirmed: boolean;
           blocked_labels: ContentLabel[];
           notification_settings: Record<string, unknown>;
+          reduced_motion: boolean;
+          default_allow_margin_notes: boolean;
+          default_notes_visible_to_readers: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -65,12 +70,18 @@ export interface Database {
           age_confirmed?: boolean;
           blocked_labels?: ContentLabel[];
           notification_settings?: Record<string, unknown>;
+          reduced_motion?: boolean;
+          default_allow_margin_notes?: boolean;
+          default_notes_visible_to_readers?: boolean;
         };
         Update: Partial<{
           role: UserRole;
           age_confirmed: boolean;
           blocked_labels: ContentLabel[];
           notification_settings: Record<string, unknown>;
+          reduced_motion: boolean;
+          default_allow_margin_notes: boolean;
+          default_notes_visible_to_readers: boolean;
         }>;
         Relationships: [];
       };
@@ -182,6 +193,8 @@ export interface Database {
         };
         Update: Partial<{
           excerpt_text: string;
+          shelf_id: string;
+          labels: ContentLabel[];
           allow_margin_notes: boolean;
           notes_visible_to_readers: boolean;
           moderation_state: BookModerationState;
@@ -215,7 +228,7 @@ export interface Database {
           book_id: string | null;
           interaction_id: string | null;
           reason: ReportReason;
-          review_state: "open" | "reviewing" | "resolved" | "dismissed";
+          review_state: ReportReviewState;
           created_at: string;
         };
         Insert: {
@@ -224,9 +237,11 @@ export interface Database {
           book_id?: string | null;
           interaction_id?: string | null;
           reason: ReportReason;
-          review_state?: "open" | "reviewing" | "resolved" | "dismissed";
+          review_state?: ReportReviewState;
         };
-        Update: never;
+        Update: Partial<{
+          review_state: ReportReviewState;
+        }>;
         Relationships: [];
       };
       interactions: {
@@ -281,6 +296,21 @@ export interface Database {
         Update: Partial<{
           read_at: string | null;
         }>;
+        Relationships: [];
+      };
+      rate_limit_events: {
+        Row: {
+          id: string;
+          actor_id: string;
+          action: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          actor_id: string;
+          action: string;
+        };
+        Update: never;
         Relationships: [];
       };
       audit_log: {

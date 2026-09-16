@@ -1,5 +1,4 @@
-import Link from "next/link";
-import { Button } from "@/components/ui/button";
+import { LinkButton } from "@/components/ui/link-button";
 
 export default function HomePage() {
   return (
@@ -12,12 +11,12 @@ export default function HomePage() {
         </p>
       </div>
       <div className="flex flex-wrap justify-center gap-3">
-        <Link href="/signup">
-          <Button variant="primary">Start your journal</Button>
-        </Link>
-        <Link href="/login">
-          <Button variant="secondary">Sign in</Button>
-        </Link>
+        <LinkButton href="/signup" variant="primary">
+          Start your journal
+        </LinkButton>
+        <LinkButton href="/login" variant="secondary">
+          Sign in
+        </LinkButton>
       </div>
     </div>
   );

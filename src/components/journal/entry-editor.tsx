@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
-import Link from "next/link";
 import { createJournalEntry, deleteJournalEntry, updateJournalEntry } from "@/lib/actions/journal";
 import { Button } from "@/components/ui/button";
+import { LinkButton } from "@/components/ui/link-button";
 
 type SaveStatus = "idle" | "unsaved" | "saving" | "saved" | "error";
 
@@ -174,11 +174,14 @@ export function EntryEditor({
           <p className="text-sm text-wood-700">
             {selectedText.trim().length} characters selected.
           </p>
-          <Link href={`/journal/${id}/share`} onClick={useSelectionAsPassage} className="mt-2 inline-block">
-            <Button type="button" variant="secondary">
-              Use highlighted text as your passage
-            </Button>
-          </Link>
+          <LinkButton
+            href={`/journal/${id}/share`}
+            onClick={useSelectionAsPassage}
+            variant="secondary"
+            className="mt-2"
+          >
+            Use highlighted text as your passage
+          </LinkButton>
         </div>
       ) : null}
 
@@ -191,17 +194,13 @@ export function EntryEditor({
         <Button type="button" onClick={handleSaveNow} disabled={status === "saving"}>
           Save now
         </Button>
-        <Link href="/journal">
-          <Button type="button" variant="secondary">
-            Done
-          </Button>
-        </Link>
+        <LinkButton href="/journal" variant="secondary">
+          Done
+        </LinkButton>
         {id ? (
-          <Link href={`/journal/${id}/share`}>
-            <Button type="button" variant="ghost">
-              Leave a passage in the library
-            </Button>
-          </Link>
+          <LinkButton href={`/journal/${id}/share`} variant="ghost">
+            Leave a passage in the library
+          </LinkButton>
         ) : null}
         <div className="ml-auto">
           {confirmingDelete ? (

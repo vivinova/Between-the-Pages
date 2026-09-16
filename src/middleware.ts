@@ -10,6 +10,7 @@ const PROTECTED_PREFIXES = [
   "/bookmarks",
   "/inbox",
   "/settings",
+  "/admin",
 ];
 
 export async function middleware(request: NextRequest) {

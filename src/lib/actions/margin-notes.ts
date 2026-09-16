@@ -6,6 +6,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { marginNoteSchema } from "@/lib/validation/interactions";
 import { getModerationProvider } from "@/lib/moderation";
 import { notify } from "@/lib/notifications";
+import { checkRateLimit, RATE_LIMITS, RATE_LIMIT_MESSAGE } from "@/lib/rate-limit";
 
 export type ActionResult = { error: string } | { error?: undefined };
 export type SubmitMarginNoteResult =
@@ -25,6 +26,10 @@ export async function submitMarginNote(input: unknown): Promise<SubmitMarginNote
   } = await supabase.auth.getUser();
   if (!user) {
     return { ok: false, error: "Sign in to write a margin note." };
+  }
+
+  if (!(await checkRateLimit(supabase, user.id, RATE_LIMITS.submitMarginNote))) {
+    return { ok: false, error: RATE_LIMIT_MESSAGE };
   }
 
   const { data: book } = await supabase

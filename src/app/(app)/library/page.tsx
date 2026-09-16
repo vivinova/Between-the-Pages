@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getReaderExclusions } from "@/lib/library";
-import { Button } from "@/components/ui/button";
+import { LinkButton } from "@/components/ui/link-button";
 
 export const metadata: Metadata = { title: "Library" };
 
@@ -47,9 +47,9 @@ export default async function LibraryPage() {
           something for you. Nothing here is ranked, and nothing keeps a public score.
         </p>
         <div>
-          <Link href="/library/find">
-            <Button variant="primary">Find me something</Button>
-          </Link>
+          <LinkButton href="/library/find" variant="primary">
+            Find me something
+          </LinkButton>
         </div>
       </div>
 

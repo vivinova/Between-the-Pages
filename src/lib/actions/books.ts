@@ -5,6 +5,7 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { submitBookSchema } from "@/lib/validation/publishing";
 import { getModerationProvider } from "@/lib/moderation";
+import { checkRateLimit, RATE_LIMITS, RATE_LIMIT_MESSAGE } from "@/lib/rate-limit";
 
 export type SubmitBookResult =
   | { ok: true; id: string; state: "published" | "pending_review" }
@@ -27,6 +28,10 @@ export async function submitBook(input: unknown): Promise<SubmitBookResult> {
   } = await supabase.auth.getUser();
   if (!user) {
     return { ok: false, error: "You need to sign in to publish to the library." };
+  }
+
+  if (!(await checkRateLimit(supabase, user.id, RATE_LIMITS.publishBook))) {
+    return { ok: false, error: RATE_LIMIT_MESSAGE };
   }
 
   // RLS scopes this to the caller's own entries — a non-owner or

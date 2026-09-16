@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
+import { LinkButton } from "@/components/ui/link-button";
 
 export const metadata: Metadata = { title: "Journal" };
 
@@ -34,9 +35,9 @@ export default async function JournalPage({
           <Link href="/journal/passages" className="text-sm font-medium text-dusk-700 underline">
             Your passages in the library
           </Link>
-          <Link href="/journal/new">
-            <Button variant="primary">New entry</Button>
-          </Link>
+          <LinkButton href="/journal/new" variant="primary">
+            New entry
+          </LinkButton>
         </div>
       </div>
 
@@ -53,11 +54,9 @@ export default async function JournalPage({
           Search
         </Button>
         {query ? (
-          <Link href="/journal">
-            <Button type="button" variant="ghost">
-              Clear
-            </Button>
-          </Link>
+          <LinkButton href="/journal" variant="ghost">
+            Clear
+          </LinkButton>
         ) : null}
       </form>
 

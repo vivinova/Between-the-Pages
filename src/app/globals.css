@@ -18,4 +18,37 @@
   :focus-visible {
     @apply outline outline-2 outline-offset-2 outline-dusk-600;
   }
+
+  .skip-link {
+    @apply sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-forest-600 focus:px-4 focus:py-2 focus:text-cream-50;
+  }
+}
+
+/*
+ * Respect the OS-level reduced-motion preference everywhere, and also a
+ * per-account override (profiles.reduced_motion, set via Settings) applied
+ * as data-reduced-motion="true" on the authenticated app shell — someone
+ * whose OS doesn't expose the setting (or who wants it on generally) can
+ * still force it. Transitions/animations are shortened rather than
+ * instant-cut in most cases, since a total absence of motion can itself be
+ * jarring; the near-zero duration still satisfies "reduced," not "removed."
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+[data-reduced-motion="true"] *,
+[data-reduced-motion="true"] *::before,
+[data-reduced-motion="true"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
 }

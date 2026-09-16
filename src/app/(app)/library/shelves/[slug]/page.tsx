@@ -1,8 +1,7 @@
 import { notFound, redirect } from "next/navigation";
-import Link from "next/link";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { pickLibraryBook } from "@/lib/actions/library";
-import { Button } from "@/components/ui/button";
+import { LinkButton } from "@/components/ui/link-button";
 
 export default async function ShelfEntryPage({ params }: { params: { slug: string } }) {
   const supabase = createServerSupabaseClient();
@@ -28,9 +27,9 @@ export default async function ShelfEntryPage({ params }: { params: { slug: strin
           later, or try another shelf.
         </p>
         <div>
-          <Link href="/library">
-            <Button variant="secondary">Back to the library</Button>
-          </Link>
+          <LinkButton href="/library" variant="secondary">
+            Back to the library
+          </LinkButton>
         </div>
       </div>
     );
