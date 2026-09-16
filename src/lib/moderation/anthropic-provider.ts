@@ -42,18 +42,18 @@ const CLASSIFICATION_JSON_SCHEMA = {
 const classificationOutputFormat = jsonSchemaOutputFormat(CLASSIFICATION_JSON_SCHEMA);
 
 const CONTEXT_DESCRIPTION: Record<ModerationContext, string> = {
-  book_excerpt:
-    "a journal excerpt a contributor is choosing to publish anonymously to a shared library of peer reflections",
-  margin_note:
-    "a short anonymous note a reader is leaving on someone else's published journal excerpt",
+  confession:
+    "an anonymous confession someone is submitting to a public board, to be published under a category (e.g. grief, regret, identity) with no author attached",
+  reply:
+    "a short anonymous reply someone is leaving on another visitor's published confession",
 };
 
 function buildSystemPrompt(context: ModerationContext): string {
-  return `You are the content-safety classifier for Between the Pages, a private journal app with one shared feature: people can anonymously publish a single passage — "leave a page" — to a library other members browse for peer support. Readers can leave short anonymous margin notes on a page.
+  return `You are the content-safety classifier for an anonymous confession board: visitors submit a confession under a category, and it publishes anonymously with no account or login behind it. Other visitors can react to and reply to a published confession, also anonymously.
 
 You are classifying ${CONTEXT_DESCRIPTION[context]}, before it is shown to anyone else.
 
-This app exists specifically so people can write honestly about hard things — grief, self-harm history, addiction, abuse, illness, loneliness. Describing a difficult experience, including past or present thoughts of self-harm or suicide, is the normal, expected use of this app and must NOT by itself be flagged as "possible_crisis_language" — that reason is for language suggesting the person may be in danger right now and could benefit from a human moderator seeing it before it's shared (e.g. an active plan, a present-tense expression of intent, a goodbye message), not for reflective or past-tense writing about hard experiences.
+This board exists specifically so people can admit things they can't say elsewhere — grief, regret, self-harm history, addiction, family conflict, secrets. Describing a difficult experience, including past or present thoughts of self-harm or suicide, is the normal, expected use of this board and must NOT by itself be flagged as "possible_crisis_language" — that reason is for language suggesting the person may be in danger right now and could benefit from a human moderator seeing it before it's shared (e.g. an active plan, a present-tense expression of intent, a goodbye message), not for reflective or past-tense writing about hard experiences.
 
 Classify the text into exactly these categories where they apply:
 - possible_pii: a real name, phone number, email, address, employer, school, or other detail specific enough to identify the writer or someone else, beyond what anonymous sharing intends.

@@ -16,8 +16,8 @@ export function CrisisResourceNotice() {
         <li>If you&apos;re in immediate danger, please contact emergency services.</li>
       </ul>
       <p className="mt-2 text-xs text-wood-500">
-        Between the Pages is a peer reflection space, not therapy or emergency support,
-        and no one here is monitoring in real time. These resources are US-based; if
+        Between the Pages is an anonymous confession board, not therapy or emergency
+        support, and no one here is monitoring in real time. These resources are US-based; if
         you&apos;re elsewhere, please reach out to a local service or someone you trust.
       </p>
     </div>

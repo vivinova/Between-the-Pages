@@ -3,142 +3,20 @@
 //   supabase gen types typescript --local > src/lib/supabase/types.ts
 // and reconcile with any hand-added JSDoc.
 
-export type UserRole = "user" | "moderator" | "admin";
-
-export type ContentLabel =
-  | "grief_death"
-  | "self_harm"
-  | "abuse_violence"
-  | "eating_disorders"
-  | "addiction"
-  | "sexual_content";
-
-export type BookModerationState =
-  | "draft"
-  | "pending_review"
-  | "published"
-  | "rejected"
-  | "removed"
-  | "archived";
-
-export type ReportReason =
-  | "harassment"
-  | "hate_speech"
-  | "dangerous_advice"
-  | "graphic_content"
-  | "personal_information"
-  | "spam"
-  | "incorrect_labels"
-  | "immediate_safety_concern"
-  | "other";
-
-export type InteractionType = "needed_this" | "pressed_flower" | "margin_note";
-
-export type InteractionModerationState =
-  | "pending_review"
-  | "published"
-  | "rejected"
-  | "removed";
-
-export type NotificationType =
-  | "needed_this"
-  | "pressed_flower"
-  | "margin_note_approved"
-  | "margin_note_rejected";
-
-export type ReportReviewState = "open" | "reviewing" | "resolved" | "dismissed" | "escalated";
+export type ModerationState = "pending_review" | "published" | "removed";
+export type InteractionKind = "me_too" | "sending_love" | "reply";
+export type ReportTarget = "confession" | "interaction";
+export type ReportReviewState = "open" | "resolved" | "dismissed" | "escalated";
 
 export interface Database {
   public: {
     Tables: {
-      profiles: {
-        Row: {
-          id: string;
-          role: UserRole;
-          age_confirmed: boolean;
-          blocked_labels: ContentLabel[];
-          notification_settings: Record<string, unknown>;
-          reduced_motion: boolean;
-          default_allow_margin_notes: boolean;
-          default_notes_visible_to_readers: boolean;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          id: string;
-          role?: UserRole;
-          age_confirmed?: boolean;
-          blocked_labels?: ContentLabel[];
-          notification_settings?: Record<string, unknown>;
-          reduced_motion?: boolean;
-          default_allow_margin_notes?: boolean;
-          default_notes_visible_to_readers?: boolean;
-        };
-        Update: Partial<{
-          role: UserRole;
-          age_confirmed: boolean;
-          blocked_labels: ContentLabel[];
-          notification_settings: Record<string, unknown>;
-          reduced_motion: boolean;
-          default_allow_margin_notes: boolean;
-          default_notes_visible_to_readers: boolean;
-        }>;
-        Relationships: [];
-      };
-      journal_entries: {
-        Row: {
-          id: string;
-          owner_id: string;
-          prompt_id: string | null;
-          title: string | null;
-          body: string;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          id?: string;
-          owner_id: string;
-          prompt_id?: string | null;
-          title?: string | null;
-          body?: string;
-        };
-        Update: Partial<{
-          prompt_id: string | null;
-          title: string | null;
-          body: string;
-        }>;
-        Relationships: [];
-      };
-      prompts: {
-        Row: {
-          id: string;
-          prompt_text: string;
-          theme: string | null;
-          active_date: string | null;
-          status: "draft" | "active" | "archived";
-          created_at: string;
-        };
-        Insert: {
-          id?: string;
-          prompt_text: string;
-          theme?: string | null;
-          active_date?: string | null;
-          status?: "draft" | "active" | "archived";
-        };
-        Update: Partial<{
-          prompt_text: string;
-          theme: string | null;
-          active_date: string | null;
-          status: "draft" | "active" | "archived";
-        }>;
-        Relationships: [];
-      };
-      shelves: {
+      categories: {
         Row: {
           id: string;
           slug: string;
           name: string;
-          description: string | null;
+          description: string;
           sort_order: number;
           is_hidden: boolean;
           created_at: string;
@@ -147,96 +25,92 @@ export interface Database {
           id?: string;
           slug: string;
           name: string;
-          description?: string | null;
+          description: string;
           sort_order?: number;
           is_hidden?: boolean;
         };
         Update: Partial<{
           slug: string;
           name: string;
-          description: string | null;
+          description: string;
           sort_order: number;
           is_hidden: boolean;
         }>;
         Relationships: [];
       };
-      books: {
+      confessions: {
         Row: {
           id: string;
-          owner_id: string;
-          source_entry_id: string | null;
-          excerpt_text: string;
-          shelf_id: string;
-          labels: ContentLabel[];
-          allow_margin_notes: boolean;
-          notes_visible_to_readers: boolean;
-          moderation_state: BookModerationState;
+          category_id: string;
+          body_text: string;
+          moderation_state: ModerationState;
           moderation_reasons: string[];
-          view_count: number;
+          contact_email: string | null;
+          email_opt_in: boolean;
+          owner_token_hash: string;
           created_at: string;
-          updated_at: string;
           published_at: string | null;
-          archived_at: string | null;
-          removed_at: string | null;
         };
         Insert: {
           id?: string;
-          owner_id: string;
-          source_entry_id?: string | null;
-          excerpt_text: string;
-          shelf_id: string;
-          labels?: ContentLabel[];
-          allow_margin_notes?: boolean;
-          notes_visible_to_readers?: boolean;
-          moderation_state?: BookModerationState;
+          category_id: string;
+          body_text: string;
+          moderation_state?: ModerationState;
           moderation_reasons?: string[];
+          contact_email?: string | null;
+          email_opt_in?: boolean;
+          owner_token_hash: string;
+          published_at?: string | null;
         };
         Update: Partial<{
-          excerpt_text: string;
-          shelf_id: string;
-          labels: ContentLabel[];
-          allow_margin_notes: boolean;
-          notes_visible_to_readers: boolean;
-          moderation_state: BookModerationState;
+          moderation_state: ModerationState;
           moderation_reasons: string[];
           published_at: string | null;
-          archived_at: string | null;
-          removed_at: string | null;
         }>;
         Relationships: [];
       };
-      bookmarks: {
+      interactions: {
         Row: {
-          reader_id: string;
-          book_id: string;
+          id: string;
+          confession_id: string;
+          type: InteractionKind;
+          body_text: string | null;
+          moderation_state: ModerationState;
+          moderation_reasons: string[];
+          fingerprint_hash: string;
           created_at: string;
         };
         Insert: {
-          reader_id: string;
-          book_id: string;
+          id?: string;
+          confession_id: string;
+          type: InteractionKind;
+          body_text?: string | null;
+          moderation_state: ModerationState;
+          moderation_reasons?: string[];
+          fingerprint_hash: string;
         };
         Update: Partial<{
-          reader_id: string;
-          book_id: string;
+          moderation_state: ModerationState;
+          moderation_reasons: string[];
         }>;
         Relationships: [];
       };
       reports: {
         Row: {
           id: string;
-          reporter_id: string;
-          book_id: string | null;
-          interaction_id: string | null;
-          reason: ReportReason;
+          target_type: ReportTarget;
+          target_id: string;
+          reason: string;
+          reporter_fingerprint_hash: string;
           review_state: ReportReviewState;
           created_at: string;
         };
         Insert: {
           id?: string;
-          reporter_id: string;
-          book_id?: string | null;
-          interaction_id?: string | null;
-          reason: ReportReason;
+          target_type: ReportTarget;
+          target_id: string;
+          reason: string;
+          reporter_fingerprint_hash: string;
           review_state?: ReportReviewState;
         };
         Update: Partial<{
@@ -244,70 +118,16 @@ export interface Database {
         }>;
         Relationships: [];
       };
-      interactions: {
-        Row: {
-          id: string;
-          book_id: string;
-          reader_id: string;
-          type: InteractionType;
-          note_text: string | null;
-          moderation_state: InteractionModerationState;
-          moderation_reasons: string[];
-          is_visible_to_readers: boolean;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          id?: string;
-          book_id: string;
-          reader_id: string;
-          type: InteractionType;
-          note_text?: string | null;
-          moderation_state?: InteractionModerationState;
-          moderation_reasons?: string[];
-          is_visible_to_readers?: boolean;
-        };
-        Update: Partial<{
-          note_text: string | null;
-          moderation_state: InteractionModerationState;
-          moderation_reasons: string[];
-          is_visible_to_readers: boolean;
-        }>;
-        Relationships: [];
-      };
-      notifications: {
-        Row: {
-          id: string;
-          recipient_id: string;
-          type: NotificationType;
-          book_id: string | null;
-          interaction_id: string | null;
-          read_at: string | null;
-          created_at: string;
-        };
-        Insert: {
-          id?: string;
-          recipient_id: string;
-          type: NotificationType;
-          book_id?: string | null;
-          interaction_id?: string | null;
-          read_at?: string | null;
-        };
-        Update: Partial<{
-          read_at: string | null;
-        }>;
-        Relationships: [];
-      };
       rate_limit_events: {
         Row: {
           id: string;
-          actor_id: string;
+          key: string;
           action: string;
           created_at: string;
         };
         Insert: {
           id?: string;
-          actor_id: string;
+          key: string;
           action: string;
         };
         Update: never;
@@ -316,7 +136,7 @@ export interface Database {
       audit_log: {
         Row: {
           id: string;
-          actor_id: string | null;
+          actor: string;
           action: string;
           entity_type: string;
           entity_id: string | null;
@@ -325,7 +145,7 @@ export interface Database {
         };
         Insert: {
           id?: string;
-          actor_id?: string | null;
+          actor?: string;
           action: string;
           entity_type: string;
           entity_id?: string | null;
@@ -335,12 +155,21 @@ export interface Database {
         Relationships: [];
       };
     };
-    Views: Record<string, never>;
-    Functions: {
-      increment_book_view_count: {
-        Args: { target_book_id: string };
-        Returns: undefined;
+    Views: {
+      // Column-restricted read surface for anon/authenticated — see the
+      // migration for why contact_email/email_opt_in/owner_token_hash/
+      // moderation_reasons are deliberately absent here.
+      public_confessions: {
+        Row: {
+          id: string;
+          category_id: string;
+          body_text: string;
+          created_at: string;
+          published_at: string | null;
+        };
+        Relationships: [];
       };
     };
+    Functions: Record<string, never>;
   };
 }

@@ -25,13 +25,11 @@
 }
 
 /*
- * Respect the OS-level reduced-motion preference everywhere, and also a
- * per-account override (profiles.reduced_motion, set via Settings) applied
- * as data-reduced-motion="true" on the authenticated app shell — someone
- * whose OS doesn't expose the setting (or who wants it on generally) can
- * still force it. Transitions/animations are shortened rather than
- * instant-cut in most cases, since a total absence of motion can itself be
- * jarring; the near-zero duration still satisfies "reduced," not "removed."
+ * Respect the OS-level reduced-motion preference everywhere. There's no
+ * per-account override (no accounts) — transitions/animations are
+ * shortened rather than instant-cut in most cases, since a total absence
+ * of motion can itself be jarring; the near-zero duration still satisfies
+ * "reduced," not "removed."
  */
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -42,13 +40,4 @@
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
-}
-
-[data-reduced-motion="true"] *,
-[data-reduced-motion="true"] *::before,
-[data-reduced-motion="true"] *::after {
-  animation-duration: 0.01ms !important;
-  animation-iteration-count: 1 !important;
-  transition-duration: 0.01ms !important;
-  scroll-behavior: auto !important;
 }

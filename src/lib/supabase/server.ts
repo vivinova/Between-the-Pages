@@ -1,32 +1,15 @@
-import { cookies } from "next/headers";
-import { createServerClient, type CookieOptions } from "@supabase/ssr";
+import { createClient } from "@supabase/supabase-js";
 import { env } from "@/lib/env";
 import type { Database } from "@/lib/supabase/types";
 
-type CookieToSet = { name: string; value: string; options: CookieOptions };
-
 /**
- * Auth-scoped client for use in server components, route handlers, and
- * server actions. Runs as the requesting user — subject to RLS.
+ * Anon-key client for use in Server Components, route handlers, and server
+ * actions. Subject to RLS as the `anon` role — there is no user session to
+ * scope by (this app has no accounts), so RLS row-visibility rules
+ * (moderation_state = 'published', etc.) are the only gate.
  */
 export function createServerSupabaseClient() {
-  const cookieStore = cookies();
-
-  return createServerClient<Database>(env.supabaseUrl(), env.supabaseAnonKey(), {
-    cookies: {
-      getAll() {
-        return cookieStore.getAll();
-      },
-      setAll(cookiesToSet: CookieToSet[]) {
-        try {
-          cookiesToSet.forEach(({ name, value, options }) => {
-            cookieStore.set(name, value, options);
-          });
-        } catch {
-          // Called from a Server Component without a mutable cookie jar.
-          // Safe to ignore when middleware is refreshing sessions.
-        }
-      },
-    },
+  return createClient<Database>(env.supabaseUrl(), env.supabaseAnonKey(), {
+    auth: { persistSession: false },
   });
 }

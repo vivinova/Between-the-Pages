@@ -9,7 +9,7 @@ describe("mockModerationProvider", () => {
   it("flags crisis language for human review", async () => {
     const result = await mockModerationProvider.checkContent(
       "some days I think about wanting to end my life",
-      "book_excerpt",
+      "confession",
     );
     expect(result.requiresHumanReview).toBe(true);
     expect(result.riskLevel).toBe("flagged");
@@ -19,7 +19,7 @@ describe("mockModerationProvider", () => {
   it("flags an email address for human review", async () => {
     const result = await mockModerationProvider.checkContent(
       "you can reach me at test@example.com",
-      "book_excerpt",
+      "confession",
     );
     expect(result.requiresHumanReview).toBe(true);
     expect(result.reasons).toContain("possible_pii");
@@ -28,7 +28,7 @@ describe("mockModerationProvider", () => {
   it("auto-approves ordinary low-risk text", async () => {
     const result = await mockModerationProvider.checkContent(
       "some mornings feel lighter than others, and I am trying to notice them.",
-      "book_excerpt",
+      "confession",
     );
     expect(result.requiresHumanReview).toBe(false);
     expect(result.riskLevel).toBe("low");
@@ -38,13 +38,13 @@ describe("mockModerationProvider", () => {
   it("applies the same checks to a margin note as to a book excerpt", async () => {
     const flagged = await mockModerationProvider.checkContent(
       "email me at reader@example.com",
-      "margin_note",
+      "reply",
     );
     expect(flagged.requiresHumanReview).toBe(true);
 
     const benign = await mockModerationProvider.checkContent(
       "I have felt this too.",
-      "margin_note",
+      "reply",
     );
     expect(benign.requiresHumanReview).toBe(false);
   });

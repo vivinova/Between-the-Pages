@@ -1,45 +1,31 @@
--- Local/dev seed data. Safe to re-run against a fresh database.
---
--- Journal prompts are real product content (not fictional placeholder
--- data), so this file is fine to apply in any environment, including a
--- first production deploy. Later phases will add clearly-marked fictional
--- sample books here, gated so they never reach production (see the
--- Phase 3/4 notes when those land).
+-- Fixed category list. Real product content, safe to apply in any
+-- environment including a first production deploy. Categories are
+-- managed exclusively via the service-role client (no public write
+-- policy), so this file is the only place they're created — there is no
+-- admin UI for adding/editing categories in this MVP.
 
-insert into public.prompts (prompt_text, theme, status) values
-  ('What are you carrying today that no one else can see?', 'presence', 'active'),
-  ('Write about a moment you felt genuinely at ease this week.', 'rest', 'active'),
-  ('What would you tell yourself from exactly one year ago?', 'growth', 'active'),
-  ('Describe something small that brought you comfort recently.', 'gratitude', 'active'),
-  ('What are you still learning to forgive yourself for?', 'self-forgiveness', 'active'),
-  ('Who do you miss, and what would you want them to know?', 'relationships', 'active'),
-  ('What does home feel like right now?', 'home', 'active'),
-  ('Write about a change you saw coming but weren''t ready for.', 'change', 'active'),
-  ('What is a fear you''re quietly carrying this season?', 'fear', 'active'),
-  ('Describe a version of yourself you''re still becoming.', 'identity', 'active'),
-  ('What is a goodbye you never got to finish?', 'grief', 'active'),
-  ('What is something you did today that you''re proud of, even quietly?', 'pride', 'active'),
-  ('Write about a friendship that ended without a clear ending.', 'relationships', 'active'),
-  ('What would you say to someone who feels behind right now?', 'compassion', 'active'),
-  ('What has your body been trying to tell you lately?', 'presence', 'active'),
-  ('Describe a lesson you learned later than you wish you had.', 'growth', 'active'),
-  ('What are you afraid to begin?', 'beginnings', 'active'),
-  ('Write about a place that holds a memory you return to.', 'memory', 'active'),
-  ('What small thing is keeping you going right now?', 'hope', 'active'),
-  ('What do you wish someone had told you when things were hardest?', 'compassion', 'active'),
-  ('Describe a moment of quiet courage from your week.', 'courage', 'active'),
-  ('What does letting go actually look like for you?', 'change', 'active'),
-  ('Write about someone who helped you without knowing it.', 'gratitude', 'active'),
-  ('What question have you been avoiding asking yourself?', 'reflection', 'active');
-
--- The eight launch shelves. Order matches the PRD's canonical list; admins
--- can rename, hide, or add shelves later without a release (see Phase 6).
-insert into public.shelves (slug, name, sort_order) values
-  ('feel-behind', 'For when you feel behind', 1),
-  ('miss-someone', 'For when you miss someone', 2),
-  ('friendships-ended-quietly', 'For friendships that ended quietly', 3),
-  ('beginnings-afraid-of', 'For beginnings you are afraid of', 4),
-  ('not-forgiven-yourself', 'For things you have not forgiven yourself for', 5),
-  ('becoming-someone-new', 'For becoming someone new', 6),
-  ('lessons-learned-too-late', 'For lessons learned too late', 7),
-  ('tiny-reasons-to-keep-going', 'For tiny reasons to keep going', 8);
+insert into public.categories (slug, name, description, sort_order) values
+  ('love-and-almost-love', 'Love and Almost Love',
+   'Crushes, relationships, breakups, unrequited love, people you never confessed your feelings to.', 1),
+  ('friendships-and-goodbyes', 'Friendships and Goodbyes',
+   'Friendship breakups, drifting apart, betrayal, loneliness within friendships.', 2),
+  ('family-and-home', 'Family and Home',
+   'Parents, siblings, family expectations, complicated homes, things left unsaid to family.', 3),
+  ('identity-and-belonging', 'Identity and Belonging',
+   'Culture, sexuality, gender, insecurity, feeling different, hiding parts of yourself.', 4),
+  ('regret-and-forgiveness', 'Regret and Forgiveness',
+   'Mistakes, guilt, apologies never given, things you''re struggling to forgive.', 5),
+  ('grief-and-missing-someone', 'Grief and Missing Someone',
+   'Death, absence, losing a person, pet, place, relationship, or former version of life.', 6),
+  ('growing-and-starting-over', 'Growing and Starting Over',
+   'Change, college, moving, adulthood, leaving something behind, becoming someone new.', 7),
+  ('dreams-and-roads-not-taken', 'Dreams and Roads Not Taken',
+   'Abandoned dreams, secret ambitions, missed opportunities, alternate lives.', 8),
+  ('pressure-and-feeling-behind', 'Pressure and Feeling Behind',
+   'School, work, achievement, comparison, failure, uncertainty about the future.', 9),
+  ('things-i-cannot-say-aloud', 'Things I Cannot Say Aloud',
+   'Confessions that don''t fit elsewhere, private truths, secrets, difficult admissions.', 10),
+  ('lessons-i-learned-too-late', 'Lessons I Learned Too Late',
+   'Lived experiences, realizations, warnings, and advice earned through experience.', 11),
+  ('hope-and-small-reasons-to-stay', 'Hope and Small Reasons to Stay',
+   'Recovery, encouragement, unexpected joy, things that helped you keep going.', 12);

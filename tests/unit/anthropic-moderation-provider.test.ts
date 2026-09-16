@@ -31,7 +31,7 @@ describe("anthropicModerationProvider", () => {
 
     const result = await anthropicModerationProvider.checkContent(
       "some mornings feel lighter than others, and I am trying to notice them.",
-      "book_excerpt",
+      "confession",
     );
 
     expect(result.riskLevel).toBe("low");
@@ -45,7 +45,7 @@ describe("anthropicModerationProvider", () => {
       parsed_output: { risk_level: "flagged", reasons: ["sexual_content"] },
     });
 
-    const result = await anthropicModerationProvider.checkContent("...", "margin_note");
+    const result = await anthropicModerationProvider.checkContent("...", "reply");
 
     expect(result.riskLevel).toBe("flagged");
     expect(result.requiresHumanReview).toBe(true);
@@ -60,7 +60,7 @@ describe("anthropicModerationProvider", () => {
 
     const result = await anthropicModerationProvider.checkContent(
       "you can reach me at reader@example.com",
-      "margin_note",
+      "reply",
     );
 
     expect(result.requiresHumanReview).toBe(true);
@@ -75,7 +75,7 @@ describe("anthropicModerationProvider", () => {
 
     const result = await anthropicModerationProvider.checkContent(
       "some days I think about wanting to end my life",
-      "book_excerpt",
+      "confession",
     );
 
     expect(result.requiresHumanReview).toBe(true);
@@ -85,7 +85,7 @@ describe("anthropicModerationProvider", () => {
   it("fails closed to human review when the classifier refuses to respond", async () => {
     mockParse.mockResolvedValue({ stop_reason: "refusal", parsed_output: null });
 
-    const result = await anthropicModerationProvider.checkContent("...", "book_excerpt");
+    const result = await anthropicModerationProvider.checkContent("...", "confession");
 
     expect(result.requiresHumanReview).toBe(true);
     expect(result.reasons).toContain("flagged_by_safety_classifier");
@@ -94,7 +94,7 @@ describe("anthropicModerationProvider", () => {
   it("fails closed to human review when the API call throws", async () => {
     mockParse.mockRejectedValue(new Error("network error"));
 
-    const result = await anthropicModerationProvider.checkContent("...", "book_excerpt");
+    const result = await anthropicModerationProvider.checkContent("...", "confession");
 
     expect(result.requiresHumanReview).toBe(true);
     expect(result.reasons).toContain("moderation_check_failed");

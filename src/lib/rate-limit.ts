@@ -1,5 +1,5 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Database } from "@/lib/supabase/types";
+import "server-only";
+import { createAdminClient } from "@/lib/supabase/admin";
 
 export interface RateLimitConfig {
   action: string;
@@ -8,39 +8,45 @@ export interface RateLimitConfig {
 }
 
 /**
- * A sliding-window rate limiter backed by rate_limit_events. Prunes
- * expired rows for this actor+action before counting, so the table
+ * A sliding-window rate limiter backed by rate_limit_events, keyed by an
+ * anonymous fingerprint hash (see src/lib/fingerprint.ts) rather than a
+ * user id — there are no accounts. rate_limit_events has no RLS policy for
+ * anon/authenticated (see the migration), so unlike the request-scoped
+ * client this app used when it had per-user auth, this always goes
+ * through the admin client — there's no auth.uid() for RLS to scope
+ * "own rows" by anymore, so the application code (this function) is the
+ * only thing enforcing that a key only ever counts its own events, and it
+ * does that correctly by construction (every query below is filtered by
+ * the caller-supplied key).
+ *
+ * Prunes expired rows for this key+action before counting, so the table
  * self-cleans rather than growing unbounded.
  *
- * Returns true (and records this attempt) if the actor is still under the
- * limit; false if they've hit it, in which case the caller must not
- * proceed with the action.
+ * Returns true (and records this attempt) if still under the limit; false
+ * if the limit's been hit, in which case the caller must not proceed.
  */
-export async function checkRateLimit(
-  supabase: SupabaseClient<Database>,
-  actorId: string,
-  config: RateLimitConfig,
-): Promise<boolean> {
+export async function checkRateLimit(key: string, config: RateLimitConfig): Promise<boolean> {
+  const admin = createAdminClient();
   const windowStart = new Date(Date.now() - config.windowMinutes * 60_000).toISOString();
 
-  await supabase
+  await admin
     .from("rate_limit_events")
     .delete()
-    .eq("actor_id", actorId)
+    .eq("key", key)
     .eq("action", config.action)
     .lt("created_at", windowStart);
 
-  const { count } = await supabase
+  const { count } = await admin
     .from("rate_limit_events")
     .select("id", { count: "exact", head: true })
-    .eq("actor_id", actorId)
+    .eq("key", key)
     .eq("action", config.action);
 
   if ((count ?? 0) >= config.limit) {
     return false;
   }
 
-  await supabase.from("rate_limit_events").insert({ actor_id: actorId, action: config.action });
+  await admin.from("rate_limit_events").insert({ key, action: config.action });
   return true;
 }
 
@@ -49,8 +55,9 @@ export async function checkRateLimit(
  * adjust once real usage data exists.
  */
 export const RATE_LIMITS = {
-  publishBook: { action: "publish_book", limit: 5, windowMinutes: 60 },
-  submitMarginNote: { action: "submit_margin_note", limit: 20, windowMinutes: 60 },
+  submitConfession: { action: "submit_confession", limit: 5, windowMinutes: 60 },
+  submitReply: { action: "submit_reply", limit: 20, windowMinutes: 60 },
+  react: { action: "react", limit: 60, windowMinutes: 60 },
   report: { action: "report", limit: 10, windowMinutes: 60 },
 } as const satisfies Record<string, RateLimitConfig>;
 

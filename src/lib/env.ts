@@ -18,4 +18,10 @@ export const env = {
   // read lazily inside AnthropicModerationProvider, not at module load, so
   // the mock provider keeps working without it set.
   anthropicApiKey: () => requireEnv("ANTHROPIC_API_KEY"),
+  // Server-only. The single shared passphrase gating /admin — there are no
+  // per-moderator accounts, see src/lib/admin/.
+  adminPassword: () => requireEnv("ADMIN_PASSWORD"),
+  // Server-only. Signs the stateless /admin session cookie — must be a
+  // long random string, distinct from ADMIN_PASSWORD.
+  adminSessionSecret: () => requireEnv("ADMIN_SESSION_SECRET"),
 };

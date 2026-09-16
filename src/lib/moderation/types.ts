@@ -1,4 +1,4 @@
-export type ModerationContext = "book_excerpt" | "margin_note";
+export type ModerationContext = "confession" | "reply";
 
 export type ModerationReason =
   | "possible_pii"
